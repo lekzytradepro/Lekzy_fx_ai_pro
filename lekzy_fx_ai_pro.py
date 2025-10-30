@@ -13,6 +13,8 @@ from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
 import pytz
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import socketserver
 
 # Configuration and environment
 from dotenv import load_dotenv
@@ -54,6 +56,7 @@ class Config:
     PREENTRY_DEFAULT = int(os.getenv("PREENTRY_DEFAULT", "30"))
     HTTP_PORT = int(os.getenv("PORT", "8080"))
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+    RENDER = os.getenv("RENDER", "false").lower() == "true"
     
     # Trading parameters
     MIN_SIGNAL_COOLDOWN = 40
@@ -97,46 +100,88 @@ logging.basicConfig(
 )
 logger = logging.getLogger("LekzyFXAI")
 
-# -------------------- Data Structures --------------------
-class SignalDirection(Enum):
-    BUY = "BUY"
-    SELL = "SELL"
-
-class TimeframeMode(Enum):
-    AUTO = "auto"
-    ONE_MINUTE = "1m"
-    FIVE_MINUTE = "5m"
-
-@dataclass
-class TradingSignal:
-    signal_id: str
-    symbol: str
-    direction: SignalDirection
-    timeframe: str
-    entry_price: Optional[float]
-    confidence: float
-    features: Dict[str, Any]
-    timestamp: datetime
-    status: str = "OPEN"
-
-@dataclass
-class UserSettings:
-    preentry_seconds: int = Config.PREENTRY_DEFAULT
-    timeframe_mode: TimeframeMode = TimeframeMode.AUTO
-    risk_level: str = "MEDIUM"
-
-# -------------------- Database Manager --------------------
-class DatabaseManager:
-    """Manage database operations with connection pooling"""
+# -------------------- Web Server for Render --------------------
+class HealthHandler(BaseHTTPRequestHandler):
+    """HTTP handler for health checks"""
     
-    def __init__(self, db_path: str):
-        self.db_path = db_path
+    def do_GET(self):
+        if self.path in ("/", "/health", "/status"):
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            response = {
+                "status": "healthy",
+                "service": "LekzyFXAIPro",
+                "timestamp": datetime.now(Config.TZ).isoformat(),
+                "version": "1.0.0",
+                "environment": "production" if Config.RENDER else "development"
+            }
+            self.wfile.write(json.dumps(response).encode())
+        else:
+            self.send_response(404)
+            self.end_headers()
+    
+    def log_message(self, format, *args):
+        logger.debug(f"HTTP {format % args}")
+
+class WebServer:
+    """Web server to keep the app alive on Render"""
+    
+    def __init__(self, port: int = Config.HTTP_PORT):
+        self.port = port
+        self.server = None
+        self.server_thread = None
+        self.is_running = False
+    
+    def start(self):
+        """Start the web server in a background thread"""
+        def run_server():
+            try:
+                self.server = HTTPServer(('0.0.0.0', self.port), HealthHandler)
+                self.is_running = True
+                logger.info(f"Web server started on port {self.port}")
+                self.server.serve_forever()
+            except Exception as e:
+                logger.error(f"Web server error: {e}")
+            finally:
+                self.is_running = False
+        
+        self.server_thread = threading.Thread(target=run_server, daemon=False)
+        self.server_thread.start()
+        
+        # Wait a bit to ensure server starts
+        time.sleep(2)
+        if self.is_running:
+            logger.info("Web server is ready and accepting requests")
+        else:
+            logger.error("Web server failed to start")
+    
+    def stop(self):
+        """Stop the web server"""
+        if self.server:
+            self.server.shutdown()
+            self.server.server_close()
+            logger.info("Web server stopped")
+        self.is_running = False
+
+# -------------------- Simplified Trading Bot --------------------
+class LekzyFXAIPro:
+    """Main trading bot class"""
+    
+    def __init__(self):
+        self.db_path = Config.DB_PATH
         self._init_db()
+        self.user_sessions = {}
+        self.performance_stats = {
+            'total_signals': 0,
+            'active_users': 0,
+            'start_time': datetime.now(Config.TZ)
+        }
+        logger.info("LekzyFXAIPro initialized")
     
     def _init_db(self):
-        """Initialize database schema - FIXED SQL SYNTAX"""
+        """Initialize database"""
         with sqlite3.connect(self.db_path) as conn:
-            # Create signals table
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS signals (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -146,311 +191,18 @@ class DatabaseManager:
                     timeframe TEXT,
                     entry_price REAL,
                     confidence REAL,
-                    label INTEGER,
-                    details TEXT,
                     timestamp TEXT,
-                    status TEXT DEFAULT 'OPEN',
-                    exit_price REAL,
-                    exit_time TEXT,
-                    profit REAL,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                    status TEXT DEFAULT 'OPEN'
                 )
             """)
-            
-            # Create authorized_users table
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS authorized_users (
                     chat_id INTEGER PRIMARY KEY,
                     username TEXT,
-                    authorized_at TEXT,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                    authorized_at TEXT
                 )
             """)
-            
-            # Create subscribers table
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS subscribers (
-                    chat_id INTEGER PRIMARY KEY,
-                    username TEXT,
-                    status TEXT DEFAULT 'pending',
-                    requested_at TEXT,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            
-            # Create user_settings table - FIXED: Remove parameter placeholder
-            conn.execute(f"""
-                CREATE TABLE IF NOT EXISTS user_settings (
-                    chat_id INTEGER PRIMARY KEY,
-                    preentry_seconds INTEGER DEFAULT {Config.PREENTRY_DEFAULT},
-                    timeframe_mode TEXT DEFAULT 'auto',
-                    risk_level TEXT DEFAULT 'MEDIUM',
-                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            
             conn.commit()
-            logger.info("Database initialized successfully")
-    
-    def get_connection(self) -> sqlite3.Connection:
-        """Get database connection with row factory"""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
-
-# -------------------- Technical Indicators --------------------
-class TechnicalIndicators:
-    """Technical analysis indicator calculations"""
-    
-    @staticmethod
-    def sma(prices: np.ndarray, period: int) -> float:
-        """Simple Moving Average"""
-        if len(prices) < period:
-            return float(np.mean(prices)) if len(prices) > 0 else 0.0
-        return float(np.mean(prices[-period:]))
-    
-    @staticmethod
-    def ema(prices: np.ndarray, period: int) -> float:
-        """Exponential Moving Average"""
-        if len(prices) == 0:
-            return 0.0
-        if len(prices) < period:
-            return float(np.mean(prices))
-        
-        alpha = 2 / (period + 1)
-        ema_value = prices[0]
-        for price in prices[1:]:
-            ema_value = alpha * price + (1 - alpha) * ema_value
-        return float(ema_value)
-    
-    @staticmethod
-    def rsi(prices: np.ndarray, period: int = 14) -> float:
-        """Relative Strength Index"""
-        if len(prices) < period + 1:
-            return 50.0
-        
-        deltas = np.diff(prices)
-        gains = np.where(deltas > 0, deltas, 0.0)
-        losses = np.where(deltas < 0, -deltas, 0.0)
-        
-        avg_gain = np.mean(gains[-period:])
-        avg_loss = np.mean(losses[-period:])
-        
-        if avg_loss == 0:
-            return 100.0 if avg_gain > 0 else 50.0
-        
-        rs = avg_gain / avg_loss
-        return float(100 - (100 / (1 + rs)))
-    
-    @staticmethod
-    def bollinger_bands_width(prices: np.ndarray, period: int = 20) -> float:
-        """Bollinger Bands Width (normalized)"""
-        if len(prices) < 2:
-            return 0.0
-        
-        sma_val = TechnicalIndicators.sma(prices, min(period, len(prices)))
-        std = float(np.std(prices[-period:])) if len(prices) >= period else float(np.std(prices))
-        
-        upper_band = sma_val + 2 * std
-        lower_band = sma_val - 2 * std
-        
-        return float((upper_band - lower_band) / (abs(sma_val) + 1e-9))
-    
-    @staticmethod
-    def atr(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 14) -> float:
-        """Average True Range"""
-        if len(closes) < 2:
-            return 0.0
-        
-        true_ranges = []
-        for i in range(1, len(closes)):
-            tr = max(
-                highs[i] - lows[i],
-                abs(highs[i] - closes[i-1]),
-                abs(lows[i] - closes[i-1])
-            )
-            true_ranges.append(tr)
-        
-        return float(np.mean(true_ranges[-period:])) if true_ranges else 0.0
-
-# -------------------- ML Model Manager --------------------
-class ModelManager:
-    """Manage ML models for each trading pair"""
-    
-    def __init__(self, symbol: str):
-        self.symbol = symbol
-        self.model_path = os.path.join(Config.MODEL_DIR, f"{self._sanitize_symbol(symbol)}_model.pkl")
-        self.scaler_path = os.path.join(Config.SCALER_DIR, f"{self._sanitize_symbol(symbol)}_scaler.pkl")
-        self.model = None
-        self.scaler = None
-        
-        self._load_or_initialize_model()
-    
-    def _sanitize_symbol(self, symbol: str) -> str:
-        """Sanitize symbol for filename use"""
-        return symbol.replace("/", "_").replace(".", "_").replace("-", "_")
-    
-    def _load_or_initialize_model(self):
-        """Load existing model or initialize new one"""
-        try:
-            if os.path.exists(self.model_path):
-                self.model = joblib.load(self.model_path)
-                logger.info(f"Loaded existing model for {self.symbol}")
-        except Exception as e:
-            logger.warning(f"Failed to load model for {self.symbol}: {e}")
-        
-        try:
-            if os.path.exists(self.scaler_path) and SKLEARN_AVAILABLE:
-                self.scaler = joblib.load(self.scaler_path)
-        except Exception as e:
-            logger.warning(f"Failed to load scaler for {self.symbol}: {e}")
-        
-        # Initialize new model if none exists
-        if self.model is None:
-            if XGB_AVAILABLE:
-                self.model = XGBClassifier(
-                    n_estimators=100,
-                    learning_rate=0.05,
-                    max_depth=4,
-                    use_label_encoder=False,
-                    eval_metric="logloss"
-                )
-                logger.info(f"Initialized XGBoost model for {self.symbol}")
-            elif SKLEARN_AVAILABLE:
-                self.model = SGDClassifier(loss="log", max_iter=1000, tol=1e-3)
-                logger.info(f"Initialized SGDClassifier for {self.symbol}")
-            else:
-                logger.warning(f"No ML libraries available for {self.symbol}")
-        
-        if self.scaler is None and SKLEARN_AVAILABLE:
-            self.scaler = StandardScaler()
-    
-    def extract_features(self, candles: List[Dict[str, Any]]) -> np.ndarray:
-        """Convert features to model input vector"""
-        if not candles or len(candles) < 6:
-            return np.zeros(8, dtype=float)
-        
-        closes = np.array([c['close'] for c in candles], dtype=float)
-        highs = np.array([c['high'] for c in candles], dtype=float)
-        lows = np.array([c['low'] for c in candles], dtype=float)
-        
-        # Calculate returns and volatility
-        returns = (closes[1:] - closes[:-1]) / (closes[:-1] + 1e-12)
-        last_return = float(returns[-1]) if len(returns) >= 1 else 0.0
-        volatility = float(np.std(returns[-20:])) if len(returns) >= 2 else 0.0
-        
-        # Technical indicators
-        ema_5 = TechnicalIndicators.ema(closes, 5)
-        ema_13 = TechnicalIndicators.ema(closes, 13)
-        ema_diff = (ema_5 - ema_13) / (abs(ema_13) + 1e-9)
-        rsi = TechnicalIndicators.rsi(closes)
-        bb_width = TechnicalIndicators.bollinger_bands_width(closes)
-        atr = TechnicalIndicators.atr(highs, lows, closes)
-        
-        # Price action features
-        up_count_5 = float(sum(1 for i in range(-5, 0) if i != 0 and closes[i] > closes[i-1]))
-        
-        # Simple MACD-like feature
-        macd_feature = float(np.mean(closes[-12:]) - np.mean(closes[-26:])) if len(closes) >= 26 else 0.0
-        
-        return np.array([
-            last_return,
-            volatility,
-            ema_diff,
-            rsi,
-            macd_feature,
-            bb_width,
-            atr,
-            up_count_5
-        ], dtype=float)
-    
-    def predict(self, candles: List[Dict[str, Any]]) -> Tuple[SignalDirection, float]:
-        """Generate prediction with confidence"""
-        if self.model is None:
-            # Fallback to random prediction with reasonable confidence
-            direction = SignalDirection.BUY if random.random() < 0.6 else SignalDirection.SELL
-            return direction, round(random.uniform(60, 85), 2)
-        
-        try:
-            feature_vector = self.extract_features(candles)
-            x = feature_vector.reshape(1, -1)
-            
-            # Scale features if scaler available
-            if self.scaler is not None:
-                try:
-                    x = self.scaler.transform(x)
-                except ValueError:
-                    # Fit scaler if not fitted
-                    self.scaler.partial_fit(x)
-                    x = self.scaler.transform(x)
-            
-            # Generate prediction
-            if hasattr(self.model, "predict_proba"):
-                probabilities = self.model.predict_proba(x)[0]
-                up_probability = float(probabilities[1]) if len(probabilities) > 1 else float(probabilities[0])
-                direction = SignalDirection.BUY if up_probability >= 0.5 else SignalDirection.SELL
-                confidence = round(max(up_probability, 1 - up_probability) * 100, 2)
-            else:
-                prediction = int(self.model.predict(x)[0])
-                direction = SignalDirection.BUY if prediction == 1 else SignalDirection.SELL
-                confidence = 60.0  # Default confidence for non-probabilistic models
-            
-            return direction, confidence
-            
-        except Exception as e:
-            logger.error(f"Prediction error for {self.symbol}: {e}")
-            direction = SignalDirection.BUY if random.random() < 0.6 else SignalDirection.SELL
-            return direction, round(random.uniform(60, 85), 2)
-
-# -------------------- Main Bot Class --------------------
-class LekzyFXAIPro:
-    """Main trading bot class with professional features"""
-    
-    def __init__(self):
-        self.db = DatabaseManager(Config.DB_PATH)
-        self.session: Optional[aiohttp.ClientSession] = None
-        self.models: Dict[str, ModelManager] = {}
-        self.user_sessions: Dict[int, Dict[str, Any]] = {}
-        self.performance_stats = {
-            'total_signals': 0,
-            'active_users': 0,
-            'start_time': datetime.now(Config.TZ)
-        }
-        
-        # Trading assets
-        self.assets = [
-            "EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "EUR/JPY", "GBP/JPY",
-            "USD/CAD", "EUR/GBP", "USD/CHF", "BTC/USD", "ETH/USD", "XAU/USD", "XAG/USD"
-        ]
-        
-        logger.info("LekzyFXAIPro initialized")
-    
-    async def initialize(self):
-        """Initialize async components"""
-        await self._init_http_session()
-        logger.info("LekzyFXAIPro fully initialized")
-    
-    async def _init_http_session(self):
-        """Initialize HTTP session"""
-        if self.session is None or self.session.closed:
-            timeout = aiohttp.ClientTimeout(total=30)
-            self.session = aiohttp.ClientSession(timeout=timeout)
-    
-    async def close(self):
-        """Cleanup resources"""
-        if self.session and not self.session.closed:
-            await self.session.close()
-            logger.info("HTTP session closed")
-    
-    # Core functionality from original implementation
-    async def fetch_market_candles(self, symbol: str, interval: str = "1min", limit: int = 200) -> List[Dict[str, Any]]:
-        """Fetch market candles from TwelveData or fallback"""
-        if not self.session:
-            await self._init_http_session()
-        
-        # Use the original implementation logic here
-        # This is a simplified version - you'd want to integrate your original logic
-        return []
     
     async def start_user_session(self, user_id: int) -> bool:
         """Start trading session for user"""
@@ -472,109 +224,55 @@ class LekzyFXAIPro:
             return False
         
         self.user_sessions[user_id]['active'] = False
-        self.user_sessions[user_id]['end_time'] = datetime.now(Config.TZ)
         self.performance_stats['active_users'] -= 1
         logger.info(f"Stopped session for user {user_id}")
         return True
 
-# -------------------- Health Server --------------------
-class HealthServer:
-    """Simple HTTP health check server"""
-    
-    def __init__(self, port: int = Config.HTTP_PORT):
-        self.port = port
-    
-    def start(self):
-        """Start health server in background thread"""
-        def run_server():
-            from http.server import HTTPServer, BaseHTTPRequestHandler
-            
-            class HealthHandler(BaseHTTPRequestHandler):
-                def do_GET(self):
-                    if self.path in ("/", "/health"):
-                        self.send_response(200)
-                        self.send_header('Content-type', 'application/json')
-                        self.end_headers()
-                        response = {
-                            "status": "healthy",
-                            "service": "LekzyFXAIPro",
-                            "timestamp": datetime.now(Config.TZ).isoformat()
-                        }
-                        self.wfile.write(json.dumps(response).encode())
-                    else:
-                        self.send_response(404)
-                        self.end_headers()
-                
-                def log_message(self, format, *args):
-                    logger.debug(f"HTTP {format % args}")
-            
-            try:
-                server = HTTPServer(("0.0.0.0", self.port), HealthHandler)
-                logger.info(f"Health server listening on port {self.port}")
-                server.serve_forever()
-            except Exception as e:
-                logger.error(f"Health server failed: {e}")
-        
-        thread = threading.Thread(target=run_server, daemon=True)
-        thread.start()
-        return thread
-
-# -------------------- Telegram Bot Handlers --------------------
+# -------------------- Telegram Bot --------------------
 class TelegramBot:
-    """Telegram bot interface handler"""
+    """Telegram bot handler"""
     
     def __init__(self, trading_bot: LekzyFXAIPro):
         self.bot = trading_bot
-        self.application: Optional[Application] = None
+        self.application = None
     
-    def initialize(self, token: str):
-        """Initialize Telegram bot - SYNC version"""
-        self.application = Application.builder().token(token).build()
+    async def initialize(self):
+        """Initialize Telegram bot"""
+        if not Config.TELEGRAM_TOKEN:
+            raise RuntimeError("TELEGRAM_TOKEN not set")
+        
+        self.application = Application.builder().token(Config.TELEGRAM_TOKEN).build()
         self._setup_handlers()
+        await self.application.initialize()
+        await self.application.start()
         logger.info("Telegram bot initialized")
     
     def _setup_handlers(self):
         """Setup command handlers"""
-        # Command handlers
         self.application.add_handler(CommandHandler("start", self._start_command))
-        self.application.add_handler(CommandHandler("login", self._login_command))
         self.application.add_handler(CommandHandler("stats", self._stats_command))
-        self.application.add_handler(CommandHandler("settings", self._settings_command))
-        
-        # Callback handlers
+        self.application.add_handler(CommandHandler("stop", self._stop_command))
         self.application.add_handler(CallbackQueryHandler(self._button_handler))
     
     async def _start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command"""
-        user = update.effective_user
         welcome_text = (
             "🤖 *Lekzy FX AI Pro*\n\n"
-            "Advanced AI-powered trading signals with machine learning.\n\n"
-            "Features:\n"
-            "• AI-powered signal generation\n"
-            "• Multiple timeframe analysis\n"
-            "• Risk management\n"
-            "• Real-time performance tracking\n\n"
-            "Use /login to authenticate or /help for more info."
+            "AI-powered trading signals\n\n"
+            "Commands:\n"
+            "• /start - Show this message\n"
+            "• /stats - Show statistics\n"
+            "• /stop - Stop signals\n"
         )
         
         keyboard = [
             [InlineKeyboardButton("🚀 Start Signals", callback_data="start_signals")],
-            [InlineKeyboardButton("📊 Live Stats", callback_data="live_stats"),
-             InlineKeyboardButton("⚙️ Settings", callback_data="settings")],
-            [InlineKeyboardButton("🔐 Login", callback_data="login")]
+            [InlineKeyboardButton("📊 Stats", callback_data="live_stats")],
+            [InlineKeyboardButton("🛑 Stop", callback_data="stop_signals")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await update.message.reply_text(
-            welcome_text,
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
-    
-    async def _login_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /login command"""
-        await update.message.reply_text("Please use the login button or contact administrator.")
+        await update.message.reply_text(welcome_text, reply_markup=reply_markup, parse_mode='Markdown')
     
     async def _stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /stats command"""
@@ -584,183 +282,192 @@ class TelegramBot:
         minutes, seconds = divmod(remainder, 60)
         
         stats_text = (
-            f"📊 *System Statistics*\n\n"
+            f"📊 *Statistics*\n\n"
             f"• Active Users: {stats['active_users']}\n"
             f"• Total Signals: {stats['total_signals']}\n"
-            f"• Uptime: {hours}h {minutes}m {seconds}s\n"
-            f"• Monitoring: {len(self.bot.assets)} assets\n"
-            f"• ML Status: {'✅ Enabled' if SKLEARN_AVAILABLE or XGB_AVAILABLE else '❌ Disabled'}"
+            f"• Uptime: {hours}h {minutes}m\n"
         )
-        
         await update.message.reply_text(stats_text, parse_mode='Markdown')
     
-    async def _settings_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /settings command"""
-        settings_text = (
-            "⚙️ *Bot Settings*\n\n"
-            "Available commands:\n"
-            "• /start - Start the bot\n"
-            "• /stats - View statistics\n"
-            "• /login - Authenticate\n"
-            "• /settings - This menu\n\n"
-            "Use the inline buttons for quick actions."
-        )
-        await update.message.reply_text(settings_text, parse_mode='Markdown')
+    async def _stop_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /stop command"""
+        user_id = update.effective_user.id
+        success = await self.bot.stop_user_session(user_id)
+        if success:
+            await update.message.reply_text("🛑 Signals stopped.")
+        else:
+            await update.message.reply_text("ℹ️ No active session found.")
     
     async def _button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle inline button presses"""
         query = update.callback_query
         await query.answer()
-        
         user_id = query.from_user.id
         
         if query.data == "start_signals":
             success = await self.bot.start_user_session(user_id)
             if success:
-                await query.edit_message_text(
-                    "✅ Signals started! You will receive trading alerts.",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🛑 Stop Signals", callback_data="stop_signals")],
-                        [InlineKeyboardButton("📊 Stats", callback_data="live_stats")]
-                    ])
-                )
+                await query.edit_message_text("✅ Signals started!")
             else:
-                await query.edit_message_text("❌ Signals already running!")
+                await query.edit_message_text("❌ Already running!")
         
         elif query.data == "stop_signals":
             success = await self.bot.stop_user_session(user_id)
             if success:
-                await query.edit_message_text(
-                    "🛑 Signals stopped.",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🚀 Start Signals", callback_data="start_signals")],
-                        [InlineKeyboardButton("📊 Stats", callback_data="live_stats")]
-                    ])
-                )
+                await query.edit_message_text("🛑 Signals stopped.")
             else:
-                await query.edit_message_text("❌ No active session found!")
+                await query.edit_message_text("❌ No active session.")
         
         elif query.data == "live_stats":
-            await self._stats_callback(query)
+            stats = self.bot.performance_stats
+            await query.edit_message_text(f"Active users: {stats['active_users']}\nTotal signals: {stats['total_signals']}")
+    
+    async def start_polling(self):
+        """Start polling for updates"""
+        if not self.application:
+            raise RuntimeError("Telegram bot not initialized")
         
-        elif query.data == "settings":
-            await self._settings_callback(query)
+        logger.info("Starting Telegram bot polling...")
+        await self.application.updater.start_polling(
+            poll_interval=1.0,
+            timeout=10,
+            drop_pending_updates=True
+        )
     
-    async def _stats_callback(self, query):
-        """Handle stats callback"""
-        # Create a mock update object for the callback
-        class MockUpdate:
-            def __init__(self, query):
-                self.effective_user = query.from_user
-                self.message = None
-        mock_update = MockUpdate(query)
-        await self._stats_command(update=mock_update, context=None)
+    async def stop_polling(self):
+        """Stop polling"""
+        if self.application and self.application.updater:
+            await self.application.updater.stop()
+            logger.info("Telegram polling stopped")
     
-    async def _settings_callback(self, query):
-        """Handle settings callback"""
-        class MockUpdate:
-            def __init__(self, query):
-                self.effective_user = query.from_user
-                self.message = None
-        mock_update = MockUpdate(query)
-        await self._settings_command(update=mock_update, context=None)
+    async def shutdown(self):
+        """Shutdown Telegram bot"""
+        if self.application:
+            await self.application.updater.stop()
+            await self.application.stop()
+            await self.application.shutdown()
+            logger.info("Telegram bot shutdown complete")
 
 # -------------------- Main Application --------------------
 class ApplicationManager:
-    """Manage the main application lifecycle"""
+    """Main application manager"""
     
     def __init__(self):
-        self.trading_bot: Optional[LekzyFXAIPro] = None
-        self.telegram_bot: Optional[TelegramBot] = None
-        self.health_server: Optional[HealthServer] = None
-        self._shutdown_event = asyncio.Event()
+        self.trading_bot = None
+        self.telegram_bot = None
+        self.web_server = None
+        self.is_running = False
     
     async def setup(self):
-        """Setup all application components"""
+        """Setup application components"""
         logger.info("Setting up Lekzy FX AI Pro...")
         
         # Initialize trading bot
         self.trading_bot = LekzyFXAIPro()
-        await self.trading_bot.initialize()
         
-        # Initialize telegram bot
+        # Initialize Telegram bot
         self.telegram_bot = TelegramBot(self.trading_bot)
-        self.telegram_bot.initialize(Config.TELEGRAM_TOKEN)
+        await self.telegram_bot.initialize()
         
-        # Start health server
-        self.health_server = HealthServer()
-        self.health_server.start()
+        # Start web server
+        self.web_server = WebServer()
+        self.web_server.start()
         
-        # Setup signal handlers for graceful shutdown
-        self._setup_signal_handlers()
-        
-        logger.info("Lekzy FX AI Pro setup completed")
-    
-    def _setup_signal_handlers(self):
-        """Setup signal handlers for graceful shutdown"""
-        def signal_handler(signum, frame):
-            logger.info(f"Received signal {signum}, initiating shutdown...")
-            self._shutdown_event.set()
-        
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
+        self.is_running = True
+        logger.info("Application setup completed successfully")
     
     async def run(self):
         """Run the main application"""
-        if not self.telegram_bot or not self.telegram_bot.application:
+        if not self.is_running:
             raise RuntimeError("Application not properly initialized")
         
-        logger.info("Starting Telegram bot polling...")
+        logger.info("Starting application...")
         
-        # Start polling
-        await self.telegram_bot.application.run_polling()
-        
-        logger.info("Telegram bot polling started")
-        
-        # Wait for shutdown signal
-        await self._shutdown_event.wait()
-        
-        logger.info("Shutdown signal received")
+        try:
+            # Start Telegram polling in background
+            polling_task = asyncio.create_task(self.telegram_bot.start_polling())
+            
+            # Keep the main thread alive
+            while self.is_running:
+                await asyncio.sleep(1)
+                
+                # Send periodic heartbeat signal
+                if int(time.time()) % 30 == 0:  # Every 30 seconds
+                    logger.debug("Application heartbeat - running normally")
+            
+            # Cleanup if we break out of the loop
+            await polling_task
+            
+        except Exception as e:
+            logger.error(f"Error in main loop: {e}")
+            raise
     
     async def shutdown(self):
-        """Gracefully shutdown the application"""
-        logger.info("Initiating graceful shutdown...")
+        """Graceful shutdown"""
+        if not self.is_running:
+            return
         
-        if self.telegram_bot and self.telegram_bot.application:
-            await self.telegram_bot.application.shutdown()
-            logger.info("Telegram bot shut down")
+        logger.info("Initiating shutdown...")
+        self.is_running = False
         
-        if self.trading_bot:
-            await self.trading_bot.close()
-            logger.info("Trading bot shut down")
-        
-        logger.info("Shutdown completed")
+        try:
+            # Stop Telegram bot
+            if self.telegram_bot:
+                await self.telegram_bot.shutdown()
+            
+            # Stop web server
+            if self.web_server:
+                self.web_server.stop()
+            
+            logger.info("Shutdown completed successfully")
+            
+        except Exception as e:
+            logger.error(f"Error during shutdown: {e}")
 
+# -------------------- Signal Handlers --------------------
+def setup_signal_handlers(app_manager):
+    """Setup signal handlers for graceful shutdown"""
+    def signal_handler(signum, frame):
+        logger.info(f"Received signal {signum}, shutting down...")
+        asyncio.create_task(app_manager.shutdown())
+    
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
+# -------------------- Main Execution --------------------
 async def main():
     """Main application entry point"""
     app_manager = ApplicationManager()
-
+    
     try:
-        # Setup
+        # Setup signal handlers
+        setup_signal_handlers(app_manager)
+        
+        # Setup application
         await app_manager.setup()
-
-        # Handle shutdown signals from Render
-        stop_event = asyncio.Event()
-
-        def handle_stop(*_):
-            logger.info("Shutdown signal received...")
-            stop_event.set()
-
-        loop = asyncio.get_running_loop()
-        for sig in (signal.SIGINT, signal.SIGTERM):
-            loop.add_signal_handler(sig, handle_stop)
-
-        # Run until shutdown signal
-        await asyncio.gather(app_manager.run(), stop_event.wait())
-
+        
+        # Run application
+        await app_manager.run()
+        
+    except KeyboardInterrupt:
+        logger.info("Keyboard interrupt received")
     except Exception as e:
         logger.critical(f"Application error: {e}")
         raise
     finally:
-        # Graceful shutdown
+        # Ensure cleanup
         await app_manager.shutdown()
+
+if __name__ == "__main__":
+    logger.info("Starting Lekzy FX AI Pro Application")
+    logger.info(f"Render mode: {Config.RENDER}")
+    logger.info(f"Web server port: {Config.HTTP_PORT}")
+    
+    try:
+        # Run the application
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Application stopped by user")
+    except Exception as e:
+        logger.critical(f"Failed to start application: {e}")
+        exit(1)
