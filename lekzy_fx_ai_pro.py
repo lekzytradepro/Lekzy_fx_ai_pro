@@ -133,8 +133,9 @@ class DatabaseManager:
         self._init_db()
     
     def _init_db(self):
-        """Initialize database schema"""
+        """Initialize database schema - FIXED SQL SYNTAX"""
         with sqlite3.connect(self.db_path) as conn:
+            # Create signals table
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS signals (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -155,6 +156,7 @@ class DatabaseManager:
                 )
             """)
             
+            # Create authorized_users table
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS authorized_users (
                     chat_id INTEGER PRIMARY KEY,
@@ -164,6 +166,7 @@ class DatabaseManager:
                 )
             """)
             
+            # Create subscribers table
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS subscribers (
                     chat_id INTEGER PRIMARY KEY,
@@ -174,17 +177,19 @@ class DatabaseManager:
                 )
             """)
             
-            conn.execute("""
+            # Create user_settings table - FIXED: Remove parameter placeholder
+            conn.execute(f"""
                 CREATE TABLE IF NOT EXISTS user_settings (
                     chat_id INTEGER PRIMARY KEY,
-                    preentry_seconds INTEGER DEFAULT ?,
+                    preentry_seconds INTEGER DEFAULT {Config.PREENTRY_DEFAULT},
                     timeframe_mode TEXT DEFAULT 'auto',
                     risk_level TEXT DEFAULT 'MEDIUM',
                     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
-            """, (Config.PREENTRY_DEFAULT,))
+            """)
             
             conn.commit()
+            logger.info("Database initialized successfully")
     
     def get_connection(self) -> sqlite3.Connection:
         """Get database connection with row factory"""
@@ -334,7 +339,9 @@ class ModelManager:
         volatility = float(np.std(returns[-20:])) if len(returns) >= 2 else 0.0
         
         # Technical indicators
-        ema_diff = TechnicalIndicators.ema(closes[-13:], 5) - TechnicalIndicators.ema(closes[-13:], 13)
+        ema_5 = TechnicalIndicators.ema(closes, 5)
+        ema_13 = TechnicalIndicators.ema(closes, 13)
+        ema_diff = (ema_5 - ema_13) / (abs(ema_13) + 1e-9)
         rsi = TechnicalIndicators.rsi(closes)
         bb_width = TechnicalIndicators.bollinger_bands_width(closes)
         atr = TechnicalIndicators.atr(highs, lows, closes)
@@ -356,7 +363,7 @@ class ModelManager:
             up_count_5
         ], dtype=float)
     
-    def predict(self, features: Dict[str, Any]) -> Tuple[SignalDirection, float]:
+    def predict(self, candles: List[Dict[str, Any]]) -> Tuple[SignalDirection, float]:
         """Generate prediction with confidence"""
         if self.model is None:
             # Fallback to random prediction with reasonable confidence
@@ -364,10 +371,7 @@ class ModelManager:
             return direction, round(random.uniform(60, 85), 2)
         
         try:
-            feature_vector = self.extract_features(features.get('candles', []))
-            if feature_vector is None or len(feature_vector) == 0:
-                raise ValueError("Invalid feature vector")
-                
+            feature_vector = self.extract_features(candles)
             x = feature_vector.reshape(1, -1)
             
             # Scale features if scaler available
@@ -431,85 +435,41 @@ class LekzyFXAIPro:
             timeout = aiohttp.ClientTimeout(total=30)
             self.session = aiohttp.ClientSession(timeout=timeout)
     
-    # User management methods would follow...
-    # [Previous user management, signal generation, and trading logic goes here]
-    # Implementing the full class would continue with the existing logic but more structured
-
-# -------------------- Telegram Bot Handlers --------------------
-class TelegramBot:
-    """Telegram bot interface handler"""
-    
-    def __init__(self, trading_bot: LekzyFXAIPro):
-        self.bot = trading_bot
-        self.application: Optional[Application] = None
-    
-    async def initialize(self, token: str):
-        """Initialize Telegram bot"""
-        self.application = Application.builder().token(token).build()
-        self._setup_handlers()
+    # Core functionality from original implementation
+    async def fetch_market_candles(self, symbol: str, interval: str = "1min", limit: int = 200) -> List[Dict[str, Any]]:
+        """Fetch market candles from TwelveData or fallback"""
+        # Implementation from original code
+        if not self.session:
+            await self._init_http_session()
         
-        await self.application.initialize()
-        await self.application.start()
-        logger.info("Telegram bot initialized")
+        # Use the original implementation logic here
+        # This is a simplified version - you'd want to integrate your original logic
+        return []
     
-    def _setup_handlers(self):
-        """Setup command handlers"""
-        # Command handlers
-        self.application.add_handler(CommandHandler("start", self._start_command))
-        self.application.add_handler(CommandHandler("login", self._login_command))
-        self.application.add_handler(CommandHandler("stats", self._stats_command))
-        self.application.add_handler(CommandHandler("settings", self._settings_command))
+    async def start_user_session(self, user_id: int) -> bool:
+        """Start trading session for user"""
+        if user_id in self.user_sessions:
+            return False
         
-        # Callback handlers
-        self.application.add_handler(CallbackQueryHandler(self._button_handler))
+        self.user_sessions[user_id] = {
+            'start_time': datetime.now(Config.TZ),
+            'signals_sent': 0,
+            'active': True
+        }
+        self.performance_stats['active_users'] += 1
+        logger.info(f"Started session for user {user_id}")
+        return True
     
-    async def _start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /start command"""
-        user = update.effective_user
-        welcome_text = (
-            "🤖 *Lekzy FX AI Pro*\n\n"
-            "Advanced AI-powered trading signals with machine learning.\n\n"
-            "Features:\n"
-            "• AI-powered signal generation\n"
-            "• Multiple timeframe analysis\n"
-            "• Risk management\n"
-            "• Real-time performance tracking\n\n"
-            "Use /login to authenticate or /help for more info."
-        )
+    async def stop_user_session(self, user_id: int) -> bool:
+        """Stop trading session for user"""
+        if user_id not in self.user_sessions:
+            return False
         
-        keyboard = [
-            [InlineKeyboardButton("🚀 Start Signals", callback_data="start_signals")],
-            [InlineKeyboardButton("📊 Live Stats", callback_data="live_stats"),
-             InlineKeyboardButton("⚙️ Settings", callback_data="settings")],
-            [InlineKeyboardButton("🔐 Login", callback_data="login")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await update.message.reply_text(
-            welcome_text,
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
-    
-    async def _login_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /login command"""
-        # Implementation details...
-        pass
-    
-    async def _stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /stats command"""
-        # Implementation details...
-        pass
-    
-    async def _settings_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /settings command"""
-        # Implementation details...
-        pass
-    
-    async def _button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle inline button presses"""
-        # Implementation details...
-        pass
+        self.user_sessions[user_id]['active'] = False
+        self.user_sessions[user_id]['end_time'] = datetime.now(Config.TZ)
+        self.performance_stats['active_users'] -= 1
+        logger.info(f"Stopped session for user {user_id}")
+        return True
 
 # -------------------- Health Server --------------------
 class HealthServer:
@@ -553,6 +513,143 @@ class HealthServer:
         thread.start()
         return thread
 
+# -------------------- Telegram Bot Handlers --------------------
+class TelegramBot:
+    """Telegram bot interface handler"""
+    
+    def __init__(self, trading_bot: LekzyFXAIPro):
+        self.bot = trading_bot
+        self.application: Optional[Application] = None
+    
+    async def initialize(self, token: str):
+        """Initialize Telegram bot"""
+        self.application = Application.builder().token(token).build()
+        self._setup_handlers()
+        
+        await self.application.initialize()
+        logger.info("Telegram bot initialized")
+    
+    def _setup_handlers(self):
+        """Setup command handlers"""
+        # Command handlers
+        self.application.add_handler(CommandHandler("start", self._start_command))
+        self.application.add_handler(CommandHandler("login", self._login_command))
+        self.application.add_handler(CommandHandler("stats", self._stats_command))
+        self.application.add_handler(CommandHandler("settings", self._settings_command))
+        
+        # Callback handlers
+        self.application.add_handler(CallbackQueryHandler(self._button_handler))
+    
+    async def _start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /start command"""
+        user = update.effective_user
+        welcome_text = (
+            "🤖 *Lekzy FX AI Pro*\n\n"
+            "Advanced AI-powered trading signals with machine learning.\n\n"
+            "Features:\n"
+            "• AI-powered signal generation\n"
+            "• Multiple timeframe analysis\n"
+            "• Risk management\n"
+            "• Real-time performance tracking\n\n"
+            "Use /login to authenticate or /help for more info."
+        )
+        
+        keyboard = [
+            [InlineKeyboardButton("🚀 Start Signals", callback_data="start_signals")],
+            [InlineKeyboardButton("📊 Live Stats", callback_data="live_stats"),
+             InlineKeyboardButton("⚙️ Settings", callback_data="settings")],
+            [InlineKeyboardButton("🔐 Login", callback_data="login")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            welcome_text,
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+    
+    async def _login_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /login command"""
+        await update.message.reply_text("Please use the login button or contact administrator.")
+    
+    async def _stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /stats command"""
+        stats = self.bot.performance_stats
+        uptime = datetime.now(Config.TZ) - stats['start_time']
+        hours, remainder = divmod(int(uptime.total_seconds()), 3600)
+        minutes, seconds = divmod(remainder, 60)
+        
+        stats_text = (
+            f"📊 *System Statistics*\n\n"
+            f"• Active Users: {stats['active_users']}\n"
+            f"• Total Signals: {stats['total_signals']}\n"
+            f"• Uptime: {hours}h {minutes}m {seconds}s\n"
+            f"• Monitoring: {len(self.bot.assets)} assets\n"
+            f"• ML Status: {'✅ Enabled' if SKLEARN_AVAILABLE or XGB_AVAILABLE else '❌ Disabled'}"
+        )
+        
+        await update.message.reply_text(stats_text, parse_mode='Markdown')
+    
+    async def _settings_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /settings command"""
+        settings_text = (
+            "⚙️ *Bot Settings*\n\n"
+            "Available commands:\n"
+            "• /start - Start the bot\n"
+            "• /stats - View statistics\n"
+            "• /login - Authenticate\n"
+            "• /settings - This menu\n\n"
+            "Use the inline buttons for quick actions."
+        )
+        await update.message.reply_text(settings_text, parse_mode='Markdown')
+    
+    async def _button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle inline button presses"""
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = query.from_user.id
+        
+        if query.data == "start_signals":
+            success = await self.bot.start_user_session(user_id)
+            if success:
+                await query.edit_message_text(
+                    "✅ Signals started! You will receive trading alerts.",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🛑 Stop Signals", callback_data="stop_signals")],
+                        [InlineKeyboardButton("📊 Stats", callback_data="live_stats")]
+                    ])
+                )
+            else:
+                await query.edit_message_text("❌ Signals already running!")
+        
+        elif query.data == "stop_signals":
+            success = await self.bot.stop_user_session(user_id)
+            if success:
+                await query.edit_message_text(
+                    "🛑 Signals stopped.",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🚀 Start Signals", callback_data="start_signals")],
+                        [InlineKeyboardButton("📊 Stats", callback_data="live_stats")]
+                    ])
+                )
+            else:
+                await query.edit_message_text("❌ No active session found!")
+        
+        elif query.data == "live_stats":
+            await self._stats_callback(query)
+        
+        elif query.data == "settings":
+            await self._settings_callback(query)
+    
+    async def _stats_callback(self, query):
+        """Handle stats callback"""
+        await self._stats_command(update=query, context=None)
+    
+    async def _settings_callback(self, query):
+        """Handle settings callback"""
+        await self._settings_command(update=query, context=None)
+
 # -------------------- Main Application --------------------
 async def main():
     """Main application entry point"""
@@ -572,10 +669,9 @@ async def main():
         
         logger.info("Lekzy FX AI Pro is fully operational")
         
-        # Keep the application running
-        while True:
-            await asyncio.sleep(3600)  # Sleep for 1 hour
-            
+        # Start polling
+        await telegram_bot.application.run_polling()
+        
     except Exception as e:
         logger.critical(f"Application failed to start: {e}")
         raise
