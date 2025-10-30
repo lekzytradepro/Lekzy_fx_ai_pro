@@ -7,8 +7,8 @@ services:
     startCommand: python app.py
     envVars:
       - key: TELEGRAM_TOKEN
-        value: your_telegram_bot_token
+        sync: false
       - key: ADMIN_TOKEN
-        value: your_admin_password
+        sync: false
       - key: RENDER
         value: true
