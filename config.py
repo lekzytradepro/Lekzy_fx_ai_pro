@@ -5,7 +5,7 @@ import pytz
 class Config:
     TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "8322565044:AAFlcvasvVumqjYMGbngp7rfW3_ScANrCfM")
     ADMIN_USER_IDS = json.loads(os.getenv("ADMIN_USER_IDS", "[6307001401,6957180168]"))
-    DB_PATH = os.getenv("DB_PATH", "lekzy_fx_ai.db")
+    DB_PATH = "/app/data/lekzy_fx_ai.db"  # Docker path
     TZ = pytz.timezone('Europe/London')
     MIN_COOLDOWN = 180
     MAX_COOLDOWN = 600
