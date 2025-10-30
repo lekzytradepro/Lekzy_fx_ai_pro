@@ -123,7 +123,7 @@ TRADING_ASSETS = [
 ]
 
 # High-accuracy trading pairs (prioritize these)
-HIGH_ACCURACY_PAIRS = ["EUR/USD", "GBP/USD", "USD/JPY", "BTC/USD", "ETH/USD", "DOGE/USD", "XRP/USD"]
+HIGH_ACCURACY_PAIRS = ["EUR/USD", "GBP/USD", "USD/JPY", "BTC/USD", "ETH/USD", "DOGE/USD", "XRP/USD", "ADA/USD"]
 
 # -------------------- Signal Generator --------------------
 class SignalGenerator:
@@ -165,11 +165,11 @@ class SignalGenerator:
         
         # Determine signal strength
         if confidence >= 90:
-            strength = "VERY HIGH"
-        elif confidence >= 85:
             strength = "HIGH"
-        else:
+        elif confidence >= 85:
             strength = "MEDIUM"
+        else:
+            strength = "LOW"
         
         # Calculate next candle time
         next_candle_time = self.calculate_next_candle_time("1m")
@@ -282,87 +282,71 @@ class LekzyFXAIPro:
         return True
 
     async def send_preentry_alert(self, application, user_id: int, signal: Dict[str, Any]):
-        """Send pre-entry alert 40 seconds before candle open"""
+        """Send simple pre-entry alert 40 seconds before candle open"""
         current_local = signal['current_time']
         entry_local = signal['entry_time'].astimezone(Config.TZ)
         
-        message = f"""🔴 *PRE-ENTRY ALERT*
+        message = f"""⏰ PRE-ENTRY ALERT ⏰
 
-*{signal['symbol']}* | *{signal['direction']}* | *{signal['timeframe']}*  
-*Current Time:* {current_local.strftime('%H:%M:%S')}  
-*Entry Time:* {entry_local.strftime('%H:%M')} (New Candle)  
-*Signal Strength:* {signal['strength']}  
+🎯 {signal['symbol']} | {signal['direction']} | {signal['timeframe']}
+🕒 Current Time: {current_local.strftime('%H:%M:%S')}
+⏰ Entry Time: {entry_local.strftime('%H:%M')} (New Candle)
+📊 Signal Strength: {signal['strength']}
 
-Prepare for the new candle! 🌤️ {current_local.strftime('%I:%M %p')}  
-
----
-
-🎯 *NEW CANDLE SIGNAL* 🔴️
-
-*ASSET:* {signal['symbol']}  
-*DIRECTION:* 💬 {signal['direction']}  
-*TIMEFRAME:* 1 Minute  
-*PAYOUT:* {signal['payout_range']}  
-*STRATEGY:* {signal['strategy']}  
-
----
-
-⚡ *TRADE SETUP:*
-*Entry:* New Candle Open  
-*Confidence:* {signal['confidence']}%  
-*Risk:* {signal['risk_level']}  
-*Duration:* {signal['duration']}  
-
----
-
-📊 *TECHNICALS:*
-• Trading new candle formation  
-• Optimal entry at candle open  
-• Clear directional bias  
-
----
-
-🎮 *EXECUTE NOW:*
-1. Open Pocket Option  
-2. Select {signal['symbol']} & 1M  
-3. Set {signal['direction']} at {entry_local.strftime('%H:%M')}  
-4. Confirm trade  
-
----
-
-🆔 *ID:* {signal['signal_id']}
-*Entry:* {entry_local.strftime('%H:%M')} (Candle Open)  
-*Expiry:* 1 Minute  
-
----
-
-⏰ *Next signal within 1-3 minutes!*  
-**{current_local.strftime('%I:%M %p')}**"""
+Prepare for the new candle! 🚀"""
 
         await application.bot.send_message(
             chat_id=user_id,
-            text=message,
-            parse_mode='Markdown'
+            text=message
         )
         logger.info(f"Sent pre-entry alert to user {user_id} for {signal['symbol']}")
 
     async def send_entry_signal(self, application, user_id: int, signal: Dict[str, Any]):
-        """Send entry signal at candle open"""
+        """Send detailed entry signal at candle open"""
         entry_local = signal['entry_time'].astimezone(Config.TZ)
+        direction_emoji = "🟢" if signal['direction'] == 'UP' else "🔴"
         
-        message = f"""✅ *ENTRY CONFIRMED*
+        message = f"""🎯 *NEW CANDLE SIGNAL* {direction_emoji}
 
-*{signal['symbol']}* | *{signal['direction']}* | *NOW*  
-*Entry Time:* {entry_local.strftime('%H:%M:%S')}  
-*Confidence:* {signal['confidence']}%  
+*ASSET:* {signal['symbol']}
+*DIRECTION:* {signal['direction']}
+*TIMEFRAME:* {signal['timeframe']}
+*PAYOUT:* {signal['payout_range']}
+*STRATEGY:* {signal['strategy']}
 
-⚡ *EXECUTE TRADE IMMEDIATELY*  
-Set {signal['direction']} on {signal['symbol']} - 1 Minute  
+---
 
-🎯 *Signal ID:* {signal['signal_id']}  
-📊 *Accuracy Rate:* {self.performance_stats['accuracy_rate']}%  
+⚡ *TRADE SETUP:*
+*Entry:* New Candle Open
+*Confidence:* {signal['confidence']}%
+*Risk:* {signal['risk_level']}
+*Duration:* {signal['duration']}
 
-⚠️ *Trade responsibly with proper risk management*"""
+---
+
+📊 *TECHNICALS:*
+• Trading new candle formation
+• Optimal entry at candle open  
+• Clear directional bias
+
+---
+
+🎮 *EXECUTE NOW:*
+1. Open Pocket Option
+2. Select {signal['symbol']} & 1M
+3. Set {signal['direction']} at {entry_local.strftime('%H:%M')}
+4. Confirm trade
+
+---
+
+🆔 *ID:* {signal['signal_id']}
+*Entry:* {entry_local.strftime('%H:%M')} (Candle Open)
+*Expiry:* 1 Minute
+
+---
+
+⏰ *Next signal within 1-3 minutes!*
+**{entry_local.strftime('%I:%M %p')}**"""
 
         await application.bot.send_message(
             chat_id=user_id,
@@ -390,7 +374,7 @@ Set {signal['direction']} on {signal['symbol']} - 1 Minute
             logger.info(f"Waiting {preentry_wait:.1f}s for pre-entry alert")
             await asyncio.sleep(preentry_wait)
             
-            # Send pre-entry alerts to all active users
+            # Send simple pre-entry alerts to all active users
             for user_id in active_users:
                 try:
                     await self.send_preentry_alert(application, user_id, signal)
@@ -402,7 +386,7 @@ Set {signal['direction']} on {signal['symbol']} - 1 Minute
             if entry_wait > 0:
                 await asyncio.sleep(entry_wait)
                 
-                # Send entry signals to all active users
+                # Send detailed entry signals to all active users
                 for user_id in active_users:
                     try:
                         await self.send_entry_signal(application, user_id, signal)
