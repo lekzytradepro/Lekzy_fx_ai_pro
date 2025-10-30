@@ -1,34 +1,3 @@
-#!/usr/bin/env python3
-"""
-lekzy_fx_ai_pro.py
-Lekzy_FX_AI_Pro - Complete single-file bot (alerts-only; no automated trading)
-
-Features:
-- TwelveData integration (free tier safe rate-limiter)
-- ML pipeline (per-asset XGBoost preferred, SGD fallback)
-- Local model persistence (models/ and scalers/)
-- Admin token authentication (ADMIN_TOKEN in .env)
-- User subscribe/approval flow (admin approves subscribers)
-- Pre-entry alerts (configurable per-user, default 30s)
-- Entry on new candle open (UTC+1 timestamps)
-- Dynamic timeframe (1m/5m auto-switch using confidence)
-- Automatic retrain every 6 hours
-- Docker-friendly and Render-ready
-
-ENV vars (in .env):
-  TELEGRAM_TOKEN - required
-  TWELVE_API_KEY - optional (fallback to synthetic candles)
-  ADMIN_TOKEN - required to authorize admin actions
-  DB_PATH - optional (default: trade_data.db)
-  MODEL_DIR - optional (default: models)
-  SCALER_DIR - optional (default: scalers)
-  RETRAIN_CANDLES - optional (default: 200)
-  PREENTRY_DEFAULT - optional seconds (default: 30)
-  PORT - optional HTTP port (default: 8080)
-
-Author: Generated for LEKZY
-"""
-
 import os
 import asyncio
 import aiohttp
