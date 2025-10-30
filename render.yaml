@@ -8,8 +8,8 @@ services:
     envVars:
       - key: TELEGRAM_TOKEN
         value: your_bot_token_here
-      - key: ADMIN_USER_IDS
-        value: "[YOUR_USER_ID_HERE]"
+      - key: ADMIN_TOKEN
+        value: "[LekzyFxAdmin459]"
       - key: NOTIFY_NEW_SUBSCRIBERS
         value: "true"
       - key: NOTIFY_UPGRADES
@@ -20,3 +20,5 @@ services:
         value: "true"
       - key: NOTIFY_SYSTEM_ALERTS
         value: "true"
+      - key: PORT
+        value: "10000"
