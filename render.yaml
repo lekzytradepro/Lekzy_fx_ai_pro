@@ -1,0 +1,11 @@
+services:
+  - type: worker
+    name: lekzy-fx-ai-pro
+    env: python
+    plan: free
+    region: oregon  # or frankfurt, depending on your location
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python lekzy_fx_ai_pro.py"
+    envVars:
+      - key: TELEGRAM_TOKEN
+        sync: false
