@@ -739,26 +739,28 @@ class ApplicationManager:
 async def main():
     """Main application entry point"""
     app_manager = ApplicationManager()
-    
+
     try:
-        # Setup application
+        # Setup
         await app_manager.setup()
-        
-        # Run application
-        await app_manager.run()
-        
+
+        # Handle shutdown signals from Render
+        stop_event = asyncio.Event()
+
+        def handle_stop(*_):
+            logger.info("Shutdown signal received...")
+            stop_event.set()
+
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, handle_stop)
+
+        # Run until shutdown signal
+        await asyncio.gather(app_manager.run(), stop_event.wait())
+
     except Exception as e:
         logger.critical(f"Application error: {e}")
         raise
     finally:
-        # Ensure graceful shutdown
+        # Graceful shutdown
         await app_manager.shutdown()
-
-if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        logger.info("Application stopped by user")
-    except Exception as e:
-        logger.critical(f"Application crashed: {e}")
-        exit(1)
