@@ -10,59 +10,76 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY *.py ./
 COPY .env ./
 
-# Create necessary directories and set permissions
-RUN mkdir -p /app/data && \
-    chmod +x *.py
+# Create data directory for database
+RUN mkdir -p /app/data
 
-# Create and set up database on startup
-RUN python -c "
-import sqlite3
-conn = sqlite3.connect('/app/data/lekzy_fx_ai.db')
-cursor = conn.cursor()
+# Set execute permissions
+RUN chmod +x *.py
 
-# Create essential tables
-cursor.execute('''
-    CREATE TABLE IF NOT EXISTS subscriptions (
-        user_id INTEGER PRIMARY KEY,
-        plan_type TEXT DEFAULT 'TRIAL',
-        start_date TEXT,
-        end_date TEXT,
-        payment_status TEXT DEFAULT 'PENDING',
-        signals_used INTEGER DEFAULT 0,
-        max_daily_signals INTEGER DEFAULT 5,
-        allowed_sessions TEXT DEFAULT '[\"MORNING\"]',
-        timezone TEXT DEFAULT 'UTC+1',
-        broadcast_enabled INTEGER DEFAULT 1,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    )
-''')
+# Create a startup script that sets up database and runs the bot
+RUN echo '#!/bin/bash\n\
+python -c "\n\
+import sqlite3\n\
+import os\n\
+\n\
+# Create database directory if it doesnt exist\n\
+os.makedirs(\"/app/data\", exist_ok=True)\n\
+\n\
+# Connect to database\n\
+conn = sqlite3.connect(\"/app/data/lekzy_fx_ai.db\")\n\
+cursor = conn.cursor()\n\
+\n\
+# Create subscriptions table\n\
+cursor.execute(\"\"\"\n\
+    CREATE TABLE IF NOT EXISTS subscriptions (\n\
+        user_id INTEGER PRIMARY KEY,\n\
+        plan_type TEXT DEFAULT \"TRIAL\",\n\
+        start_date TEXT,\n\
+        end_date TEXT,\n\
+        payment_status TEXT DEFAULT \"PENDING\",\n\
+        signals_used INTEGER DEFAULT 0,\n\
+        max_daily_signals INTEGER DEFAULT 5,\n\
+        allowed_sessions TEXT DEFAULT \"[\\\"MORNING\\\"]\",\n\
+        timezone TEXT DEFAULT \"UTC+1\",\n\
+        broadcast_enabled INTEGER DEFAULT 1,\n\
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP\n\
+    )\n\
+\"\"\")\n\
+\n\
+# Create admin_notifications table\n\
+cursor.execute(\"\"\"\n\
+    CREATE TABLE IF NOT EXISTS admin_notifications (\n\
+        id INTEGER PRIMARY KEY AUTOINCREMENT,\n\
+        notification_type TEXT,\n\
+        user_id INTEGER,\n\
+        username TEXT,\n\
+        plan_type TEXT,\n\
+        details TEXT,\n\
+        sent_time TEXT DEFAULT CURRENT_TIMESTAMP\n\
+    )\n\
+\"\"\")\n\
+\n\
+# Create user_activity table\n\
+cursor.execute(\"\"\"\n\
+    CREATE TABLE IF NOT EXISTS user_activity (\n\
+        id INTEGER PRIMARY KEY AUTOINCREMENT,\n\
+        user_id INTEGER,\n\
+        activity_type TEXT,\n\
+        details TEXT,\n\
+        timestamp TEXT DEFAULT CURRENT_TIMESTAMP\n\
+    )\n\
+\"\"\")\n\
+\n\
+conn.commit()\n\
+conn.close()\n\
+print(\"✅ Database tables created successfully\")\n\
+"\n\
+\n\
+# Start the bot\n\
+python lekzy_fx_ai_pro.py\n\
+' > /app/start.sh
 
-cursor.execute('''
-    CREATE TABLE IF NOT EXISTS admin_notifications (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        notification_type TEXT,
-        user_id INTEGER,
-        username TEXT,
-        plan_type TEXT,
-        details TEXT,
-        sent_time TEXT DEFAULT CURRENT_TIMESTAMP
-    )
-''')
+RUN chmod +x /app/start.sh
 
-cursor.execute('''
-    CREATE TABLE IF NOT EXISTS user_activity (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
-        activity_type TEXT,
-        details TEXT,
-        timestamp TEXT DEFAULT CURRENT_TIMESTAMP
-    )
-''')
-
-conn.commit()
-conn.close()
-print('✅ Database tables created successfully')
-"
-
-# Run the bot
-CMD ["python", "lekzy_fx_ai_pro.py"]
+# Run the startup script
+CMD ["/bin/bash", "/app/start.sh"]
