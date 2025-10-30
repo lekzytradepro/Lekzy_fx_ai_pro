@@ -1,11 +1,14 @@
 services:
-  - type: worker
+  - type: web
     name: lekzy-fx-ai-pro
     env: python
     plan: free
-    region: oregon  # or frankfurt, depending on your location
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python lekzy_fx_ai_pro.py"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
     envVars:
       - key: TELEGRAM_TOKEN
-        sync: false
+        value: your_telegram_bot_token
+      - key: ADMIN_TOKEN
+        value: your_admin_password
+      - key: RENDER
+        value: true
