@@ -982,10 +982,25 @@ async def main():
     print("Starting Lekzy_FX_AI_Pro...")
     await app.run_polling()
 
+import asyncio
+
+async def main():
+    application = Application.builder().token("YOUR_TELEGRAM_TOKEN").build()
+
+    # Add handlers here
+    # application.add_handler(...)
+
+    print("Starting Lekzy_FX_AI_Pro...")
+    await application.initialize()
+    await application.start()
+    await application.updater.start_polling()
+    await application.updater.idle()
+
 if __name__ == "__main__":
     try:
         asyncio.run(main())
-    except KeyboardInterrupt:
-        print("Shutdown requested by user.")
-    except Exception as e:
-        print("Fatal error:", e)
+    except RuntimeError:
+        # For environments like Render where loop may already run
+        loop = asyncio.get_event_loop()
+        loop.create_task(main())
+        loop.run_forever()
