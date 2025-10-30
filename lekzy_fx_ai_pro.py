@@ -14,7 +14,59 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Cont
 import requests
 import pandas as pd
 import numpy as np
+def initialize_database():
+    """Initialize database tables on startup"""
+    try:
+        conn = sqlite3.connect(Config.DB_PATH)
+        cursor = conn.cursor()
 
+        # Create subscriptions table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS subscriptions (
+                user_id INTEGER PRIMARY KEY,
+                plan_type TEXT DEFAULT 'TRIAL',
+                start_date TEXT,
+                end_date TEXT,
+                payment_status TEXT DEFAULT 'PENDING',
+                signals_used INTEGER DEFAULT 0,
+                max_daily_signals INTEGER DEFAULT 5,
+                allowed_sessions TEXT DEFAULT '["MORNING"]',
+                timezone TEXT DEFAULT 'UTC+1',
+                broadcast_enabled INTEGER DEFAULT 1,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Create admin_notifications table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS admin_notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                notification_type TEXT,
+                user_id INTEGER,
+                username TEXT,
+                plan_type TEXT,
+                details TEXT,
+                sent_time TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Create user_activity table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_activity (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                activity_type TEXT,
+                details TEXT,
+                timestamp TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        conn.commit()
+        conn.close()
+        print("✅ Database initialized successfully")
+        
+    except Exception as e:
+        print(f"❌ Database initialization failed: {e}")
 # Enhanced Configuration with Admin Settings
 class Config:
     TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "your_bot_token_here")
