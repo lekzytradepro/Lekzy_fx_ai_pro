@@ -7,6 +7,7 @@ import time
 import random
 import threading
 import logging
+import signal
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
@@ -435,10 +436,15 @@ class LekzyFXAIPro:
             timeout = aiohttp.ClientTimeout(total=30)
             self.session = aiohttp.ClientSession(timeout=timeout)
     
+    async def close(self):
+        """Cleanup resources"""
+        if self.session and not self.session.closed:
+            await self.session.close()
+            logger.info("HTTP session closed")
+    
     # Core functionality from original implementation
     async def fetch_market_candles(self, symbol: str, interval: str = "1min", limit: int = 200) -> List[Dict[str, Any]]:
         """Fetch market candles from TwelveData or fallback"""
-        # Implementation from original code
         if not self.session:
             await self._init_http_session()
         
@@ -521,12 +527,10 @@ class TelegramBot:
         self.bot = trading_bot
         self.application: Optional[Application] = None
     
-    async def initialize(self, token: str):
-        """Initialize Telegram bot"""
+    def initialize(self, token: str):
+        """Initialize Telegram bot - SYNC version"""
         self.application = Application.builder().token(token).build()
         self._setup_handlers()
-        
-        await self.application.initialize()
         logger.info("Telegram bot initialized")
     
     def _setup_handlers(self):
@@ -644,37 +648,111 @@ class TelegramBot:
     
     async def _stats_callback(self, query):
         """Handle stats callback"""
-        await self._stats_command(update=query, context=None)
+        # Create a mock update object for the callback
+        class MockUpdate:
+            def __init__(self, query):
+                self.effective_user = query.from_user
+                self.message = None
+        mock_update = MockUpdate(query)
+        await self._stats_command(update=mock_update, context=None)
     
     async def _settings_callback(self, query):
         """Handle settings callback"""
-        await self._settings_command(update=query, context=None)
+        class MockUpdate:
+            def __init__(self, query):
+                self.effective_user = query.from_user
+                self.message = None
+        mock_update = MockUpdate(query)
+        await self._settings_command(update=mock_update, context=None)
 
 # -------------------- Main Application --------------------
-async def main():
-    """Main application entry point"""
-    try:
-        logger.info("Starting Lekzy FX AI Pro...")
+class ApplicationManager:
+    """Manage the main application lifecycle"""
+    
+    def __init__(self):
+        self.trading_bot: Optional[LekzyFXAIPro] = None
+        self.telegram_bot: Optional[TelegramBot] = None
+        self.health_server: Optional[HealthServer] = None
+        self._shutdown_event = asyncio.Event()
+    
+    async def setup(self):
+        """Setup all application components"""
+        logger.info("Setting up Lekzy FX AI Pro...")
         
-        # Initialize components
-        trading_bot = LekzyFXAIPro()
-        await trading_bot.initialize()
+        # Initialize trading bot
+        self.trading_bot = LekzyFXAIPro()
+        await self.trading_bot.initialize()
         
-        telegram_bot = TelegramBot(trading_bot)
-        await telegram_bot.initialize(Config.TELEGRAM_TOKEN)
+        # Initialize telegram bot
+        self.telegram_bot = TelegramBot(self.trading_bot)
+        self.telegram_bot.initialize(Config.TELEGRAM_TOKEN)
         
         # Start health server
-        health_server = HealthServer()
-        health_server.start()
+        self.health_server = HealthServer()
+        self.health_server.start()
         
-        logger.info("Lekzy FX AI Pro is fully operational")
+        # Setup signal handlers for graceful shutdown
+        self._setup_signal_handlers()
+        
+        logger.info("Lekzy FX AI Pro setup completed")
+    
+    def _setup_signal_handlers(self):
+        """Setup signal handlers for graceful shutdown"""
+        def signal_handler(signum, frame):
+            logger.info(f"Received signal {signum}, initiating shutdown...")
+            self._shutdown_event.set()
+        
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+    
+    async def run(self):
+        """Run the main application"""
+        if not self.telegram_bot or not self.telegram_bot.application:
+            raise RuntimeError("Application not properly initialized")
+        
+        logger.info("Starting Telegram bot polling...")
         
         # Start polling
-        await telegram_bot.application.run_polling()
+        await self.telegram_bot.application.run_polling()
+        
+        logger.info("Telegram bot polling started")
+        
+        # Wait for shutdown signal
+        await self._shutdown_event.wait()
+        
+        logger.info("Shutdown signal received")
+    
+    async def shutdown(self):
+        """Gracefully shutdown the application"""
+        logger.info("Initiating graceful shutdown...")
+        
+        if self.telegram_bot and self.telegram_bot.application:
+            await self.telegram_bot.application.shutdown()
+            logger.info("Telegram bot shut down")
+        
+        if self.trading_bot:
+            await self.trading_bot.close()
+            logger.info("Trading bot shut down")
+        
+        logger.info("Shutdown completed")
+
+async def main():
+    """Main application entry point"""
+    app_manager = ApplicationManager()
+    
+    try:
+        # Setup application
+        await app_manager.setup()
+        
+        # Run application
+        await app_manager.run()
         
     except Exception as e:
-        logger.critical(f"Application failed to start: {e}")
+        logger.critical(f"Application error: {e}")
         raise
+    finally:
+        # Ensure graceful shutdown
+        await app_manager.shutdown()
 
 if __name__ == "__main__":
     try:
