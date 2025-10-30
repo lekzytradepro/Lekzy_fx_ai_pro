@@ -1,14 +1,22 @@
 services:
   - type: web
-    name: lekzy-fx-ai-pro
-    env: python
+    name: lekzy-fx-ai-bot
+    env: docker
     plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: python app.py
+    docker:
+      dockerfile: Dockerfile
     envVars:
       - key: TELEGRAM_TOKEN
-        sync: false
-      - key: ADMIN_TOKEN
-        sync: false
-      - key: RENDER
-        value: true
+        value: your_bot_token_here
+      - key: ADMIN_USER_IDS
+        value: "[YOUR_USER_ID_HERE]"
+      - key: NOTIFY_NEW_SUBSCRIBERS
+        value: "true"
+      - key: NOTIFY_UPGRADES
+        value: "true"
+      - key: NOTIFY_TRIAL_EXPIRY
+        value: "true"
+      - key: NOTIFY_PAYMENT_ISSUES
+        value: "true"
+      - key: NOTIFY_SYSTEM_ALERTS
+        value: "true"
