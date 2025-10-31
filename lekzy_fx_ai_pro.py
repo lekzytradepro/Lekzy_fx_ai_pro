@@ -8,7 +8,8 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 import pytz
 from http.server import HTTPServer, BaseHTTPRequestHandler
-
+from telegram import Update
+from telegram.ext import ContextTypes
 # ... (previous imports)
 
 class SessionManager:
