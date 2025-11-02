@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-LEKZY FX AI PRO - PROFESSIONAL VERSION WITH TRANSPARENT PRICING
+LEKZY FX AI PRO - WITH SMART TRADE TYPE SELECTION
 """
 
 import os
@@ -63,10 +63,11 @@ class PlanConfig:
             "daily_signals": 3,
             "price": "FREE",
             "actual_price": "$0",
-            "features": ["3 signals/day", "7 days access", "Basic support", "All currency pairs", "Basic timeframes"],
+            "features": ["3 signals/day", "7 days access", "Basic support", "All currency pairs", "Normal trades only"],
             "description": "Perfect for testing our signals",
             "emoji": "🆓",
-            "recommended": False
+            "recommended": False,
+            "quick_trades": False  # Trial users don't get quick trades
         },
         "PREMIUM": {
             "name": "💎 PREMIUM", 
@@ -74,10 +75,11 @@ class PlanConfig:
             "daily_signals": 50,
             "price": "$49.99",
             "actual_price": "$49.99",
-            "features": ["50 signals/day", "30 days access", "Priority support", "All pairs access", "5M/15M timeframes", "Risk management tools"],
+            "features": ["50 signals/day", "30 days access", "Priority support", "All pairs access", "Normal & Quick trades", "Risk management tools"],
             "description": "Best for serious traders",
             "emoji": "💎",
-            "recommended": True
+            "recommended": True,
+            "quick_trades": True  # Premium users get both options
         },
         "VIP": {
             "name": "🚀 VIP",
@@ -85,10 +87,11 @@ class PlanConfig:
             "daily_signals": 100,
             "price": "$129.99",
             "actual_price": "$129.99", 
-            "features": ["100 signals/day", "90 days access", "24/7 support", "All pairs + VIP signals", "1M/5M/15M timeframes", "Advanced analytics", "Priority signal delivery"],
+            "features": ["100 signals/day", "90 days access", "24/7 support", "All pairs + VIP signals", "All trade types", "Advanced analytics", "Priority signal delivery"],
             "description": "Ultimate trading experience",
             "emoji": "🚀",
-            "recommended": False
+            "recommended": False,
+            "quick_trades": True
         },
         "PRO": {
             "name": "🔥 PRO TRADER",
@@ -99,7 +102,8 @@ class PlanConfig:
             "features": ["200 signals/day", "180 days access", "24/7 premium support", "VIP + PRO signals", "All timeframes", "Personal analyst access", "Custom strategies"],
             "description": "Professional trading suite",
             "emoji": "🔥",
-            "recommended": False
+            "recommended": False,
+            "quick_trades": True
         }
     }
 
@@ -695,7 +699,10 @@ class TradingBot:
                 except:
                     pass
             
-            # PROFESSIONAL WELCOME MESSAGE - No prices shown
+            # Check if user has access to quick trades
+            user_plan = PlanConfig.PLANS.get(subscription['plan_type'], {})
+            has_quick_trades = user_plan.get('quick_trades', False)
+            
             message = f"""
 🎉 *WELCOME TO LEKZY FX AI PRO!* 🚀
 
@@ -705,6 +712,7 @@ class TradingBot:
 • Plan: {plan_emoji} *{subscription['plan_type']}*{days_left}
 • Signals Used: *{subscription['signals_used']}/{subscription['max_daily_signals']}*
 • Status: *{'✅ ACTIVE' if subscription['is_active'] else '❌ EXPIRED'}*
+• Trade Types: *{'⚡ Quick & 📈 Normal' if has_quick_trades else '📈 Normal Only'}*
 
 {'🎯' if current_session['active'] else '⏸️'} *MARKET STATUS: {current_session['name']}*
 🕒 *Time:* {current_session['current_time']}
@@ -720,11 +728,19 @@ class TradingBot:
             if is_admin:
                 message += "\n👑 *You have Admin Access*\n"
             
-            # Clean professional keyboard - No direct pricing push
+            # Dynamic keyboard based on user's plan
             keyboard = []
             
-            # Primary action first
-            keyboard.append([InlineKeyboardButton("🚀 GET TRADING SIGNAL", callback_data="get_signal")])
+            if has_quick_trades or is_admin:
+                # Premium+ users see both options
+                keyboard.append([
+                    InlineKeyboardButton("⚡ QUICK TRADE", callback_data="quick_signal"),
+                    InlineKeyboardButton("📈 NORMAL TRADE", callback_data="normal_signal")
+                ])
+            else:
+                # Trial users see only normal trades
+                keyboard.append([InlineKeyboardButton("🚀 GET TRADING SIGNAL", callback_data="normal_signal")])
+                keyboard.append([InlineKeyboardButton("💎 UNLOCK QUICK TRADES", callback_data="show_plans")])
             
             # Secondary options
             keyboard.append([InlineKeyboardButton("💎 VIEW SUBSCRIPTION PLANS", callback_data="show_plans")])
@@ -810,9 +826,67 @@ class TradingBot:
 """
         
         keyboard = [
-            [InlineKeyboardButton("🚀 GET SIGNAL", callback_data="get_signal")],
+            [InlineKeyboardButton("🚀 GET SIGNAL", callback_data="normal_signal")],
             [InlineKeyboardButton("💎 VIEW PLANS", callback_data="show_plans")],
             [InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]
+        ]
+        
+        await self.app.bot.send_message(
+            chat_id=chat_id,
+            text=message,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+    
+    async def show_trade_types_info(self, chat_id):
+        """Educational page about different trade types"""
+        message = """
+📚 *UNDERSTANDING TRADE TYPES*
+
+⚡ *QUICK TRADES (1-Minute Timeframe)*
+*What to Expect:*
+• Very fast signals (25-second countdown)
+• Tight stop losses (smaller risk per trade)
+• Quick profit targets
+• Higher trading frequency
+
+*Best For:*
+• Experienced traders
+• Scalpers who watch markets closely
+• Those with fast internet connections
+• Risk-tolerant individuals
+
+*Risks:*
+• Higher spread costs
+• More susceptible to market noise
+• Requires quick execution
+
+📈 *NORMAL TRADES (5M/15M Timeframe)*
+*What to Expect:*
+• Standard speed (40-second countdown)  
+• Balanced stop losses
+• Realistic profit targets
+• Medium trading frequency
+
+*Best For:*
+• Most traders (recommended)
+• Beginners learning the markets
+• Those who can't watch charts constantly
+• Risk-averse individuals
+
+*Benefits:*
+• More reliable signals
+• Better risk-reward ratios
+• Less affected by market noise
+
+💡 *Our Recommendation:* Start with Normal trades to learn the system, then consider Quick trades once you're comfortable!
+"""
+        
+        keyboard = [
+            [InlineKeyboardButton("⚡ TRY QUICK TRADE", callback_data="quick_signal")],
+            [InlineKeyboardButton("📈 TRY NORMAL TRADE", callback_data="normal_signal")],
+            [InlineKeyboardButton("💎 UPGRADE FOR QUICK TRADES", callback_data="show_plans")],
+            [InlineKeyboardButton("🏠 BACK TO MAIN", callback_data="main_menu")]
         ]
         
         await self.app.bot.send_message(
@@ -829,10 +903,10 @@ class TradingBot:
             for plan_id, plan in PlanConfig.PLANS.items():
                 features = " • ".join(plan["features"])
                 recommended_badge = " 🏆 **MOST POPULAR**" if plan.get("recommended", False) else ""
-                plans_text += f"\n{plan['emoji']} *{plan['name']}* - {plan['actual_price']}{recommended_badge}\n"
-                plans_text += f"⏰ {plan['days']} days • 📊 {plan['daily_signals']} signals/day\n"
-                plans_text += f"⚡ {features}\n"
-                plans_text += f"💡 {plan['description']}\n"
+                text += f"\n{plan['emoji']} *{plan['name']}* - {plan['actual_price']}{recommended_badge}\n"
+                text += f"⏰ {plan['days']} days • 📊 {plan['daily_signals']} signals/day\n"
+                text += f"⚡ {features}\n"
+                text += f"💡 {plan['description']}\n"
             
             message = f"""
 💎 *LEKZY FX AI PRO - SUBSCRIPTION PLANS*
@@ -858,7 +932,7 @@ class TradingBot:
 🚀 *Ready to upgrade? Contact {Config.ADMIN_CONTACT} to get started!*
 """
             keyboard = [
-                [InlineKeyboardButton("🚀 TRY FREE SIGNALS", callback_data="get_signal")],
+                [InlineKeyboardButton("🚀 TRY FREE SIGNALS", callback_data="normal_signal")],
                 [InlineKeyboardButton("📞 CONTACT TO PURCHASE", callback_data="contact_support")],
                 [InlineKeyboardButton("📊 MY CURRENT PLAN", callback_data="show_stats")],
                 [InlineKeyboardButton("🏠 BACK TO MAIN", callback_data="main_menu")]
@@ -902,7 +976,7 @@ We accept multiple payment methods for your convenience.
 """
         keyboard = [
             [InlineKeyboardButton("💎 VIEW PLANS & PRICING", callback_data="show_plans")],
-            [InlineKeyboardButton("🚀 TRY FREE SIGNAL", callback_data="get_signal")],
+            [InlineKeyboardButton("🚀 TRY FREE SIGNAL", callback_data="normal_signal")],
             [InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]
         ]
         
@@ -947,7 +1021,7 @@ We accept multiple payment methods for your convenience.
 *Markets are most volatile during session overlaps!*
 """
             keyboard = [
-                [InlineKeyboardButton("🚀 GET SIGNAL ANYWAY", callback_data="get_signal")],
+                [InlineKeyboardButton("🚀 GET SIGNAL ANYWAY", callback_data="normal_signal")],
                 [InlineKeyboardButton("💎 VIEW PLANS", callback_data="show_plans")],
                 [InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]
             ]
@@ -1217,6 +1291,9 @@ class TelegramBot:
             except:
                 pass
         
+        user_plan = PlanConfig.PLANS.get(subscription['plan_type'], {})
+        has_quick_trades = user_plan.get('quick_trades', False)
+        
         message = f"""
 📊 *YOUR TRADING STATISTICS*
 
@@ -1224,6 +1301,7 @@ class TelegramBot:
 💼 *Plan:* {plan_emoji} {subscription['plan_type']}{days_left}
 📈 *Signals Today:* {subscription['signals_used']}/{subscription['max_daily_signals']}
 🎯 *Status:* {'✅ ACTIVE' if subscription['is_active'] else '❌ EXPIRED'}
+⚡ *Quick Trades:* {'✅ AVAILABLE' if has_quick_trades else '💎 UPGRADE REQUIRED'}
 🔑 *Admin Access:* {'✅ YES' if is_admin else '❌ NO'}
 🛡️ *Risk Acknowledged:* {'✅ YES' if subscription.get('risk_acknowledged', False) else '❌ NO'}
 
@@ -1231,7 +1309,7 @@ class TelegramBot:
 """
         keyboard = [
             [InlineKeyboardButton("💎 VIEW PLANS", callback_data="show_plans")],
-            [InlineKeyboardButton("🚀 GET SIGNAL", callback_data="get_signal")],
+            [InlineKeyboardButton("🚀 GET SIGNAL", callback_data="normal_signal")],
             [InlineKeyboardButton("🚨 RISK MANAGEMENT", callback_data="risk_management")],
             [InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]
         ]
@@ -1395,6 +1473,40 @@ Trading carries significant risk. Only use risk capital.
         try:
             if data == "get_signal":
                 await self.signal_cmd(update, context)
+            elif data == "quick_signal":
+                # Check if user has access to quick trades
+                subscription = self.bot_core.sub_mgr.get_user_subscription(user.id)
+                user_plan = PlanConfig.PLANS.get(subscription['plan_type'], {})
+                has_quick_trades = user_plan.get('quick_trades', False)
+                is_admin = self.bot_core.admin_auth.is_admin(user.id)
+                
+                if not has_quick_trades and not is_admin:
+                    await query.edit_message_text(
+                        "❌ *Quick Trades Not Available*\n\n"
+                        "⚡ *Quick Trades* are available for Premium subscribers and above.\n\n"
+                        "💎 *Upgrade to unlock:*\n"
+                        "• Faster 1-minute timeframe signals\n"
+                        "• Quick 25-second entries\n"
+                        "• Advanced trading features\n\n"
+                        "*Use Normal trades for now, or upgrade to access Quick trades!*",
+                        reply_markup=InlineKeyboardMarkup([
+                            [InlineKeyboardButton("📈 USE NORMAL TRADES", callback_data="normal_signal")],
+                            [InlineKeyboardButton("💎 UPGRADE PLAN", callback_data="show_plans")],
+                            [InlineKeyboardButton("📚 LEARN ABOUT TRADE TYPES", callback_data="learn_trade_types")],
+                            [InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]
+                        ])
+                    )
+                    return
+                
+                await self.bot_core.generate_signal(user.id, query.message.chat_id, "QUICK", is_admin)
+                
+            elif data == "normal_signal":
+                is_admin = self.bot_core.admin_auth.is_admin(user.id)
+                await self.bot_core.generate_signal(user.id, query.message.chat_id, "NORMAL", is_admin)
+                
+            elif data == "learn_trade_types":
+                await self.bot_core.show_trade_types_info(query.message.chat_id)
+                
             elif data.startswith("force_signal_"):
                 # Extract signal style from force_signal_{style}
                 style = data.replace("force_signal_", "")
@@ -1490,7 +1602,7 @@ async def main():
     success = await bot.initialize()
     
     if success:
-        logger.info("🚀 LEKZY FX AI PRO - PROFESSIONAL VERSION WITH TRANSPARENT PRICING ACTIVE!")
+        logger.info("🚀 LEKZY FX AI PRO - SMART TRADE SELECTION ACTIVE!")
         await bot.start_polling()
         
         # Keep running
@@ -1500,5 +1612,5 @@ async def main():
         logger.error("❌ Failed to start bot")
 
 if __name__ == "__main__":
-    print("🚀 Starting LEKZY FX AI PRO - TRANSPARENT PRICING EDITION...")
+    print("🚀 Starting LEKZY FX AI PRO - SMART TRADE SELECTION EDITION...")
     asyncio.run(main())
