@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-LEKZY FX AI PRO - PROFESSIONAL VERSION
+LEKZY FX AI PRO - PROFESSIONAL VERSION WITH TRANSPARENT PRICING
 """
 
 import os
@@ -54,7 +54,7 @@ class RiskConfig:
         "aggressive": "⚡ Aggressive: 2-3% risk per trade (not recommended for beginners)"
     }
 
-# ==================== PLAN CONFIGURATION ====================
+# ==================== ENHANCED PLAN CONFIGURATION ====================
 class PlanConfig:
     PLANS = {
         "TRIAL": {
@@ -63,9 +63,10 @@ class PlanConfig:
             "daily_signals": 3,
             "price": "FREE",
             "actual_price": "$0",
-            "features": ["3 signals/day", "7 days access", "Basic support", "All currency pairs"],
+            "features": ["3 signals/day", "7 days access", "Basic support", "All currency pairs", "Basic timeframes"],
             "description": "Perfect for testing our signals",
-            "emoji": "🆓"
+            "emoji": "🆓",
+            "recommended": False
         },
         "PREMIUM": {
             "name": "💎 PREMIUM", 
@@ -73,9 +74,10 @@ class PlanConfig:
             "daily_signals": 50,
             "price": "$49.99",
             "actual_price": "$49.99",
-            "features": ["50 signals/day", "30 days access", "Priority support", "All pairs access", "5M/15M timeframes"],
+            "features": ["50 signals/day", "30 days access", "Priority support", "All pairs access", "5M/15M timeframes", "Risk management tools"],
             "description": "Best for serious traders",
-            "emoji": "💎"
+            "emoji": "💎",
+            "recommended": True
         },
         "VIP": {
             "name": "🚀 VIP",
@@ -83,9 +85,10 @@ class PlanConfig:
             "daily_signals": 100,
             "price": "$129.99",
             "actual_price": "$129.99", 
-            "features": ["100 signals/day", "90 days access", "24/7 support", "All pairs + VIP signals", "1M/5M/15M timeframes", "Advanced analytics"],
+            "features": ["100 signals/day", "90 days access", "24/7 support", "All pairs + VIP signals", "1M/5M/15M timeframes", "Advanced analytics", "Priority signal delivery"],
             "description": "Ultimate trading experience",
-            "emoji": "🚀"
+            "emoji": "🚀",
+            "recommended": False
         },
         "PRO": {
             "name": "🔥 PRO TRADER",
@@ -93,9 +96,10 @@ class PlanConfig:
             "daily_signals": 200,
             "price": "$199.99",
             "actual_price": "$199.99",
-            "features": ["200 signals/day", "180 days access", "24/7 premium support", "VIP + PRO signals", "All timeframes", "Personal analyst"],
+            "features": ["200 signals/day", "180 days access", "24/7 premium support", "VIP + PRO signals", "All timeframes", "Personal analyst access", "Custom strategies"],
             "description": "Professional trading suite",
-            "emoji": "🔥"
+            "emoji": "🔥",
+            "recommended": False
         }
     }
 
@@ -655,11 +659,12 @@ class TradingBot:
         self.risk_mgr = RiskManager()
     
     def get_plans_text(self):
-        """Generate plans list text without prices"""
+        """Generate plans list text with clear pricing"""
         text = ""
         for plan_id, plan in PlanConfig.PLANS.items():
             features = " • ".join(plan["features"])
-            text += f"\n{plan['emoji']} *{plan['name']}*\n"
+            recommended_badge = " 🏆 **MOST POPULAR**" if plan.get("recommended", False) else ""
+            text += f"\n{plan['emoji']} *{plan['name']}* - {plan['actual_price']}{recommended_badge}\n"
             text += f"⏰ {plan['days']} days • 📊 {plan['daily_signals']} signals/day\n"
             text += f"⚡ {features}\n"
             text += f"💡 {plan['description']}\n"
@@ -819,11 +824,12 @@ class TradingBot:
     
     async def show_plans(self, chat_id):
         try:
-            # Build plans text without being too salesy
+            # Build plans text with clear pricing
             plans_text = ""
             for plan_id, plan in PlanConfig.PLANS.items():
                 features = " • ".join(plan["features"])
-                plans_text += f"\n{plan['emoji']} *{plan['name']}*\n"
+                recommended_badge = " 🏆 **MOST POPULAR**" if plan.get("recommended", False) else ""
+                plans_text += f"\n{plan['emoji']} *{plan['name']}* - {plan['actual_price']}{recommended_badge}\n"
                 plans_text += f"⏰ {plan['days']} days • 📊 {plan['daily_signals']} signals/day\n"
                 plans_text += f"⚡ {features}\n"
                 plans_text += f"💡 {plan['description']}\n"
@@ -835,20 +841,25 @@ class TradingBot:
 
 {plans_text}
 
+💰 *Transparent Pricing - No Hidden Fees*
+
 🎯 *Why Traders Choose Us:*
 • 90%+ Signal Accuracy Rate
 • Real-time AI Analysis
 • Professional Risk Management
 • 24/7 Customer Support
 
-📞 *Interested in upgrading?*
-Contact {Config.ADMIN_CONTACT} for pricing and payment options.
+💳 *Payment Methods:*
+• Cryptocurrency (BTC, ETH, USDT)
+• Bank Transfer
+• Mobile Money
+• Credit/Debit Cards
 
-💡 *Start with FREE signals to experience our quality!*
+🚀 *Ready to upgrade? Contact {Config.ADMIN_CONTACT} to get started!*
 """
             keyboard = [
                 [InlineKeyboardButton("🚀 TRY FREE SIGNALS", callback_data="get_signal")],
-                [InlineKeyboardButton("📞 CONTACT FOR PRICING", callback_data="contact_support")],
+                [InlineKeyboardButton("📞 CONTACT TO PURCHASE", callback_data="contact_support")],
                 [InlineKeyboardButton("📊 MY CURRENT PLAN", callback_data="show_stats")],
                 [InlineKeyboardButton("🏠 BACK TO MAIN", callback_data="main_menu")]
             ]
@@ -863,40 +874,35 @@ Contact {Config.ADMIN_CONTACT} for pricing and payment options.
             logger.error(f"❌ Show plans failed: {e}")
     
     async def show_contact_support(self, chat_id):
-        """Professional contact page with pricing"""
+        """Streamlined contact page since prices are now in plans"""
         message = f"""
 📞 *GET STARTED WITH LEKZY FX AI PRO*
 
 *Ready to upgrade your trading?*
 
-💎 *Available Subscription Tiers:*
-• **PREMIUM** - Enhanced signals & features
-• **VIP** - Advanced strategies & priority support  
-• **PRO** - Maximum signals & personal guidance
+💎 *Subscription Plans Available:*
+• **PREMIUM** - $49.99 (30 days)
+• **VIP** - $129.99 (90 days)  
+• **PRO** - $199.99 (180 days)
 
-💰 *Transparent Pricing:*
-We offer competitive pricing based on your trading needs. Contact us for current rates and special offers.
-
-💳 *Payment Methods Accepted:*
-• Cryptocurrency (BTC, ETH, USDT)
-• Bank Transfer
-• Mobile Money
-• Other local options
+💳 *Instant Activation Available*
+We accept multiple payment methods for your convenience.
 
 🎯 *What You Get:*
 • Professional-grade trading signals
 • AI-powered market analysis
 • Risk management guidance
 • 24/7 customer support
+• Instant activation after payment
 
 📱 *Contact Us Now:*
 {Config.ADMIN_CONTACT}
 
-*We'll help you choose the perfect plan for your trading goals!*
+*Mention your preferred plan and we'll get you set up immediately!*
 """
         keyboard = [
+            [InlineKeyboardButton("💎 VIEW PLANS & PRICING", callback_data="show_plans")],
             [InlineKeyboardButton("🚀 TRY FREE SIGNAL", callback_data="get_signal")],
-            [InlineKeyboardButton("💎 VIEW PLAN FEATURES", callback_data="show_plans")],
             [InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]
         ]
         
@@ -1347,7 +1353,7 @@ class TelegramBot:
 🤖 *LEKZY FX AI PRO - HELP GUIDE*
 
 💎 *TRADING COMMANDS:*
-• /start - Main menu with plans
+• /start - Main menu with options
 • /signal - Get trading signal (always available)
 • /session - Market session times
 • /plans - View subscription plans & pricing
@@ -1364,9 +1370,11 @@ class TelegramBot:
 
 💰 *SUBSCRIPTION PLANS:*
 • 🆓 Trial - FREE (3 signals/day)
-• 💎 Premium - Enhanced features
-• 🚀 VIP - Advanced strategies
-• 🔥 PRO - Maximum performance
+• 💎 Premium - $49.99 (50 signals/day)
+• 🚀 VIP - $129.99 (100 signals/day) 
+• 🔥 PRO - $199.99 (200 signals/day)
+
+💡 *All pricing is transparently displayed in /plans*
 
 🚨 *RISK WARNING:*
 Trading carries significant risk. Only use risk capital.
@@ -1482,7 +1490,7 @@ async def main():
     success = await bot.initialize()
     
     if success:
-        logger.info("🚀 LEKZY FX AI PRO - PROFESSIONAL VERSION ACTIVE!")
+        logger.info("🚀 LEKZY FX AI PRO - PROFESSIONAL VERSION WITH TRANSPARENT PRICING ACTIVE!")
         await bot.start_polling()
         
         # Keep running
@@ -1492,5 +1500,5 @@ async def main():
         logger.error("❌ Failed to start bot")
 
 if __name__ == "__main__":
-    print("🚀 Starting LEKZY FX AI PRO - PROFESSIONAL EDITION...")
+    print("🚀 Starting LEKZY FX AI PRO - TRANSPARENT PRICING EDITION...")
     asyncio.run(main())
