@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-LEKZY FX AI PRO - FIXED VERSION WITH TIMEFRAME ENTRIES
+LEKZY FX AI PRO - COMPLETE VERSION WITH PLAN LIST
 """
 
 import os
@@ -28,6 +28,35 @@ class Config:
     PORT = int(os.getenv("PORT", 10000))
     PRE_ENTRY_DELAY = 40  # seconds before entry
 
+# ==================== PLAN CONFIGURATION ====================
+class PlanConfig:
+    PLANS = {
+        "TRIAL": {
+            "name": "🆓 FREE TRIAL",
+            "days": 7,
+            "daily_signals": 3,
+            "price": "FREE",
+            "features": ["3 signals/day", "7 days access", "Basic support"],
+            "description": "Perfect for testing our signals"
+        },
+        "PREMIUM": {
+            "name": "💎 PREMIUM",
+            "days": 30,
+            "daily_signals": 50,
+            "price": "Premium Token",
+            "features": ["50 signals/day", "30 days access", "Priority support", "All pairs access"],
+            "description": "Best for serious traders"
+        },
+        "VIP": {
+            "name": "🚀 VIP",
+            "days": 90,
+            "daily_signals": 100,
+            "price": "VIP Token",
+            "features": ["100 signals/day", "90 days access", "24/7 support", "All pairs + VIP signals"],
+            "description": "Ultimate trading experience"
+        }
+    }
+
 # ==================== LOGGING SETUP ====================
 logging.basicConfig(
     level=logging.INFO,
@@ -47,10 +76,12 @@ def home():
 ✅ Bot Status: RUNNING
 ✅ Token System: OPERATIONAL
 ✅ Signal System: WORKING
+✅ Plan System: ACTIVE
 
 📊 Features:
 • Timeframe-Based Entries (1M, 5M, 15M)
 • Token Subscription System
+• Multiple Plan Options
 • Admin Signal Generation
 • Professional Trading
 """
@@ -61,7 +92,7 @@ def health():
         "status": "healthy",
         "service": "lekzy_fx_ai_pro",
         "timestamp": datetime.now().isoformat(),
-        "version": "4.0.0"
+        "version": "5.0.0"
     })
 
 def run_web_server():
@@ -95,7 +126,7 @@ def initialize_database():
                 first_name TEXT,
                 plan_type TEXT DEFAULT 'TRIAL',
                 subscription_end TEXT,
-                max_daily_signals INTEGER DEFAULT 5,
+                max_daily_signals INTEGER DEFAULT 3,
                 signals_used INTEGER DEFAULT 0,
                 joined_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
@@ -128,6 +159,7 @@ def initialize_database():
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS subscription_tokens (
                 token TEXT PRIMARY KEY,
+                plan_type TEXT DEFAULT 'PREMIUM',
                 days_valid INTEGER DEFAULT 30,
                 created_by INTEGER,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -156,25 +188,29 @@ def initialize_database():
     except Exception as e:
         logger.error(f"❌ Database error: {e}")
 
-# ==================== TOKEN MANAGER ====================
+# ==================== TOKEN MANAGER WITH PLAN SUPPORT ====================
 class TokenManager:
     def __init__(self, db_path):
         self.db_path = db_path
     
-    def generate_token(self, days_valid=30, created_by=None):
+    def generate_token(self, plan_type="PREMIUM", days_valid=None, created_by=None):
         try:
             alphabet = string.ascii_uppercase + string.digits
             token = ''.join(secrets.choice(alphabet) for _ in range(12))
             
+            # Set days based on plan if not specified
+            if days_valid is None:
+                days_valid = PlanConfig.PLANS.get(plan_type, {}).get("days", 30)
+            
             conn = sqlite3.connect(self.db_path)
-            cursor = conn.execute(
-                "INSERT INTO subscription_tokens (token, days_valid, created_by) VALUES (?, ?, ?)",
-                (token, days_valid, created_by)
+            conn.execute(
+                "INSERT INTO subscription_tokens (token, plan_type, days_valid, created_by) VALUES (?, ?, ?, ?)",
+                (token, plan_type, days_valid, created_by)
             )
             conn.commit()
             conn.close()
             
-            logger.info(f"✅ Token generated: {token} for {days_valid} days")
+            logger.info(f"✅ {plan_type} token generated: {token} for {days_valid} days")
             return token
             
         except Exception as e:
@@ -185,7 +221,7 @@ class TokenManager:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.execute(
-                "SELECT token, days_valid, status FROM subscription_tokens WHERE token = ? AND status = 'ACTIVE'",
+                "SELECT token, plan_type, days_valid, status FROM subscription_tokens WHERE token = ? AND status = 'ACTIVE'",
                 (token,)
             )
             result = cursor.fetchone()
@@ -194,50 +230,77 @@ class TokenManager:
                 conn.close()
                 return False, "Invalid or expired token"
             
-            token_str, days_valid, status = result
+            token_str, plan_type, days_valid, status = result
             
             conn.execute(
-                "UPDATE subscription_tokens SET status = 'USED', used_at = ? WHERE token = ?",
-                (datetime.now().isoformat(), token)
+                "UPDATE subscription_tokens SET status = 'USED', used_at = ?, used_by = ? WHERE token = ?",
+                (datetime.now().isoformat(), None, token)  # user_id will be set during activation
             )
             conn.commit()
             conn.close()
             
-            return True, days_valid
+            return True, plan_type, days_valid
             
         except Exception as e:
             logger.error(f"❌ Token validation failed: {e}")
-            return False, "Token validation error"
+            return False, "Token validation error", 0
 
-# ==================== SUBSCRIPTION MANAGER ====================
+# ==================== SUBSCRIPTION MANAGER WITH PLAN SUPPORT ====================
 class SubscriptionManager:
     def __init__(self, db_path):
         self.db_path = db_path
         self.token_manager = TokenManager(db_path)
     
-    def activate_premium_subscription(self, user_id, token, days_valid):
+    def activate_subscription(self, user_id, token, plan_type, days_valid):
         try:
             start_date = datetime.now()
             end_date = start_date + timedelta(days=days_valid)
             
+            # Get plan configuration
+            plan_config = PlanConfig.PLANS.get(plan_type, PlanConfig.PLANS["PREMIUM"])
+            max_signals = plan_config["daily_signals"]
+            
             conn = sqlite3.connect(self.db_path)
             
+            # First check if user exists
+            cursor = conn.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
+            user_exists = cursor.fetchone()
+            
+            if user_exists:
+                # Update existing user
+                conn.execute("""
+                    UPDATE users SET 
+                    plan_type = ?, 
+                    subscription_end = ?, 
+                    max_daily_signals = ?,
+                    signals_used = 0
+                    WHERE user_id = ?
+                """, (plan_type, end_date.isoformat(), max_signals, user_id))
+            else:
+                # Insert new user
+                conn.execute("""
+                    INSERT INTO users 
+                    (user_id, plan_type, subscription_end, max_daily_signals, signals_used)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (user_id, plan_type, end_date.isoformat(), max_signals, 0))
+            
+            # Update token with user info
+            conn.execute(
+                "UPDATE subscription_tokens SET used_by = ? WHERE token = ?",
+                (user_id, token)
+            )
+            
+            # Update/Insert user_subscriptions
             conn.execute("""
                 INSERT OR REPLACE INTO user_subscriptions 
                 (user_id, token_used, plan_type, start_date, end_date, max_daily_signals)
                 VALUES (?, ?, ?, ?, ?, ?)
-            """, (user_id, token, "PREMIUM", start_date.isoformat(), end_date.isoformat(), 50))
-            
-            conn.execute("""
-                INSERT OR REPLACE INTO users 
-                (user_id, plan_type, subscription_end, max_daily_signals, signals_used)
-                VALUES (?, ?, ?, ?, ?)
-            """, (user_id, "PREMIUM", end_date.isoformat(), 50, 0))
+            """, (user_id, token, plan_type, start_date.isoformat(), end_date.isoformat(), max_signals))
             
             conn.commit()
             conn.close()
             
-            logger.info(f"✅ Premium activated for user {user_id} for {days_valid} days")
+            logger.info(f"✅ {plan_type} activated for user {user_id} for {days_valid} days")
             return True
             
         except Exception as e:
@@ -247,21 +310,40 @@ class SubscriptionManager:
     def get_user_subscription(self, user_id):
         try:
             conn = sqlite3.connect(self.db_path)
+            
+            # First try to get from users table
             cursor = conn.execute("""
                 SELECT plan_type, subscription_end, max_daily_signals, signals_used 
                 FROM users WHERE user_id = ?
             """, (user_id,))
             result = cursor.fetchone()
-            conn.close()
             
             if result:
                 plan_type, sub_end, max_signals, signals_used = result
                 
+                # Check if subscription is active
                 is_active = True
                 if sub_end and plan_type != "TRIAL":
-                    end_date = datetime.fromisoformat(sub_end)
-                    is_active = datetime.now() < end_date
+                    try:
+                        end_date = datetime.fromisoformat(sub_end)
+                        is_active = datetime.now() < end_date
+                        # If expired, reset to TRIAL
+                        if not is_active:
+                            plan_type = "TRIAL"
+                            max_signals = PlanConfig.PLANS["TRIAL"]["daily_signals"]
+                            # Update the user record
+                            conn.execute("""
+                                UPDATE users SET 
+                                plan_type = ?, 
+                                max_daily_signals = ?,
+                                signals_used = ?
+                                WHERE user_id = ?
+                            """, ("TRIAL", max_signals, 0, user_id))
+                            conn.commit()
+                    except:
+                        is_active = True
                 
+                conn.close()
                 return {
                     "plan_type": plan_type,
                     "is_active": is_active,
@@ -271,24 +353,35 @@ class SubscriptionManager:
                     "signals_remaining": max_signals - signals_used
                 }
             else:
+                # User doesn't exist, create trial user
+                trial_plan = PlanConfig.PLANS["TRIAL"]
+                conn.execute("""
+                    INSERT INTO users 
+                    (user_id, plan_type, max_daily_signals, signals_used)
+                    VALUES (?, ?, ?, ?)
+                """, (user_id, "TRIAL", trial_plan["daily_signals"], 0))
+                conn.commit()
+                conn.close()
+                
                 return {
                     "plan_type": "TRIAL",
                     "is_active": True,
                     "subscription_end": None,
-                    "max_daily_signals": 5,
+                    "max_daily_signals": trial_plan["daily_signals"],
                     "signals_used": 0,
-                    "signals_remaining": 5
+                    "signals_remaining": trial_plan["daily_signals"]
                 }
                 
         except Exception as e:
             logger.error(f"❌ Get subscription failed: {e}")
+            trial_plan = PlanConfig.PLANS["TRIAL"]
             return {
                 "plan_type": "TRIAL",
                 "is_active": True,
                 "subscription_end": None,
-                "max_daily_signals": 5,
+                "max_daily_signals": trial_plan["daily_signals"],
                 "signals_used": 0,
-                "signals_remaining": 5
+                "signals_remaining": trial_plan["daily_signals"]
             }
     
     def can_user_request_signal(self, user_id):
@@ -567,7 +660,7 @@ class AdminAuth:
             logger.error(f"❌ Admin check failed: {e}")
             return False
 
-# ==================== WORKING TRADING BOT ====================
+# ==================== WORKING TRADING BOT WITH PLAN LIST ====================
 class WorkingTradingBot:
     def __init__(self, application):
         self.application = application
@@ -584,6 +677,20 @@ class WorkingTradingBot:
             subscription = self.subscription_manager.get_user_subscription(user.id)
             is_admin = self.admin_auth.is_admin(user.id)
             
+            # Enhanced plan display with emojis
+            plan_emoji = "💎" if subscription['plan_type'] == 'PREMIUM' else "🚀" if subscription['plan_type'] == 'VIP' else "🆓"
+            plan_status = "ACTIVE ✅" if subscription['is_active'] else "EXPIRED ❌"
+            
+            # Calculate days left if not trial
+            days_left = ""
+            if subscription['plan_type'] != 'TRIAL' and subscription['subscription_end']:
+                try:
+                    end_date = datetime.fromisoformat(subscription['subscription_end'])
+                    days_left = (end_date - datetime.now()).days
+                    days_left = f" ({days_left} days left)"
+                except:
+                    days_left = ""
+            
             # Base welcome message
             if current_session["status"] == "ACTIVE":
                 message = f"""
@@ -591,13 +698,18 @@ class WorkingTradingBot:
 
 *Hello {user.first_name}!* 👋
 
-📊 *Your Account Status:*
-• Plan: *{subscription['plan_type']}*
-• Signals: *{subscription['signals_used']}/{subscription['max_daily_signals']} used*
-• Status: *{'✅ ACTIVE' if subscription['is_active'] else '❌ EXPIRED'}*
+📊 *YOUR ACCOUNT STATUS:*
+• Plan: {plan_emoji} *{subscription['plan_type']}*{days_left}
+• Status: *{plan_status}*
+• Signals Used: *{subscription['signals_used']}/{subscription['max_daily_signals']}*
+• Signals Remaining: *{subscription['signals_remaining']}*
 
 ✅ *Live Market Session: {current_session['name']}*
 ✅ *Current Time: {current_session['current_time']}*
+
+📋 *AVAILABLE PLANS:*
+
+{self._get_plans_list()}
 
 💡 *Ready to trade? Use the buttons below!*
 """
@@ -607,16 +719,21 @@ class WorkingTradingBot:
 
 *Hello {user.first_name}!* 👋
 
-📊 *Your Account Status:*
-• Plan: *{subscription['plan_type']}*
-• Signals: *{subscription['signals_used']}/{subscription['max_daily_signals']} used*
-• Status: *{'✅ ACTIVE' if subscription['is_active'] else '❌ EXPIRED'}*
+📊 *YOUR ACCOUNT STATUS:*
+• Plan: {plan_emoji} *{subscription['plan_type']}*{days_left}
+• Status: *{plan_status}*
+• Signals Used: *{subscription['signals_used']}/{subscription['max_daily_signals']}*
+• Signals Remaining: *{subscription['signals_remaining']}*
 
 ⏸️ *MARKET IS CURRENTLY CLOSED*
 
 🕒 *Current Time:* {current_session['current_time']}
 📅 *Next Session:* {current_session['next_session']}
 ⏰ *Opens at:* {current_session['next_session_time']} UTC+1
+
+📋 *AVAILABLE PLANS:*
+
+{self._get_plans_list()}
 """
             
             # Add admin badge if user is admin
@@ -631,7 +748,8 @@ class WorkingTradingBot:
             if current_session["status"] == "ACTIVE":
                 keyboard.append([InlineKeyboardButton("🚀 GET SIGNAL NOW", callback_data="get_signal")])
             
-            keyboard.append([InlineKeyboardButton("💎 REGISTER/UPGRADE", callback_data="show_register")])
+            keyboard.append([InlineKeyboardButton("💎 VIEW PLANS", callback_data="show_plans")])
+            keyboard.append([InlineKeyboardButton("📊 MY STATS", callback_data="show_stats")])
             keyboard.append([InlineKeyboardButton("🕒 MARKET STATUS", callback_data="session_info")])
             keyboard.append([InlineKeyboardButton("📞 CONTACT SUPPORT", callback_data="contact_support")])
             
@@ -661,6 +779,50 @@ class WorkingTradingBot:
                 parse_mode='Markdown'
             )
     
+    def _get_plans_list(self):
+        """Generate formatted plans list for display"""
+        plans_text = []
+        for plan_id, plan in PlanConfig.PLANS.items():
+            features = " • ".join(plan["features"])
+            plans_text.append(
+                f"{plan['name']}\n"
+                f"📅 {plan['days']} days • 📊 {plan['daily_signals']} signals/day\n"
+                f"💰 {plan['price']}\n"
+                f"✨ {features}\n"
+                f"💡 {plan['description']}\n"
+            )
+        return "\n".join(plans_text)
+    
+    async def show_plans_message(self, chat_id):
+        """Show detailed plans information"""
+        message = f"""
+💎 *LEKZY FX AI PRO - SUBSCRIPTION PLANS* 💎
+
+*Choose the plan that fits your trading style:*
+
+{self._get_plans_list()}
+
+🔑 *How to Upgrade:*
+1. Contact {Config.ADMIN_CONTACT} for tokens
+2. Use `/register YOUR_TOKEN` to activate
+3. Start trading with enhanced features!
+
+📞 *Contact {Config.ADMIN_CONTACT} for token purchases!*
+"""
+        keyboard = [
+            [InlineKeyboardButton("💳 GET TOKEN", callback_data="contact_support")],
+            [InlineKeyboardButton("📊 MY STATS", callback_data="show_stats")],
+            [InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await self.application.bot.send_message(
+            chat_id=chat_id,
+            text=message,
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+
     async def generate_signal_for_user(self, user_id, chat_id, signal_style="NORMAL", is_admin=False):
         try:
             # Check subscription and limits (unless admin)
@@ -805,7 +967,7 @@ class WorkingTradingBot:
             keyboard = [
                 [InlineKeyboardButton("✅ TRADE EXECUTED", callback_data="trade_done")],
                 [InlineKeyboardButton("🔄 NEW SIGNAL", callback_data="get_signal")],
-                [InlineKeyboardButton("💎 UPGRADE ACCOUNT", callback_data="show_register")]
+                [InlineKeyboardButton("💎 VIEW PLANS", callback_data="show_plans")]
             ]
             
             # Add admin buttons if admin
@@ -868,6 +1030,7 @@ class SimpleTelegramBot:
             self.application.add_handler(CommandHandler("login", self.login_command))
             self.application.add_handler(CommandHandler("admin", self.admin_command))
             self.application.add_handler(CommandHandler("mystats", self.mystats_command))
+            self.application.add_handler(CommandHandler("plans", self.plans_command))
             
             # Callback handlers - FIXED: Add all button handlers
             self.application.add_handler(CallbackQueryHandler(self.button_handler))
@@ -875,7 +1038,7 @@ class SimpleTelegramBot:
             await self.application.initialize()
             await self.application.start()
             
-            logger.info("✅ Telegram Bot with Fixed Buttons Initialized!")
+            logger.info("✅ Telegram Bot with Plan List Initialized!")
             return True
             
         except Exception as e:
@@ -905,33 +1068,34 @@ class SimpleTelegramBot:
             
             if not context.args:
                 await update.message.reply_text(
-                    "🔐 *REGISTER PREMIUM ACCOUNT*\n\nUsage: `/register YOUR_TOKEN`",
+                    "🔐 *REGISTER SUBSCRIPTION*\n\nUsage: `/register YOUR_TOKEN`\n\nUse /plans to see available plans!",
                     parse_mode='Markdown'
                 )
                 return
             
             token = context.args[0].strip().upper()
             
-            is_valid, days_valid = self.trading_bot.subscription_manager.token_manager.validate_token(token)
+            is_valid, plan_type, days_valid = self.trading_bot.subscription_manager.token_manager.validate_token(token)
             
             if not is_valid:
                 await update.message.reply_text(
-                    f"❌ *Invalid Token*\n\nPlease contact {Config.ADMIN_CONTACT} for a valid token.",
+                    f"❌ *Invalid Token*\n\nPlease contact {Config.ADMIN_CONTACT} for a valid token.\n\nUse /plans to see available plans!",
                     parse_mode='Markdown'
                 )
                 return
             
-            success = self.trading_bot.subscription_manager.activate_premium_subscription(
-                user.id, token, days_valid
+            success = self.trading_bot.subscription_manager.activate_subscription(
+                user.id, token, plan_type, days_valid
             )
             
             if success:
+                plan_config = PlanConfig.PLANS.get(plan_type, PlanConfig.PLANS["PREMIUM"])
                 end_date = datetime.now() + timedelta(days=days_valid)
                 await update.message.reply_text(
-                    f"🎉 *PREMIUM ACTIVATED!* 🚀\n\n"
-                    f"Welcome to LEKZY FX AI PRO Premium!\n"
+                    f"🎉 *{plan_config['name']} ACTIVATED!* 🚀\n\n"
+                    f"Welcome to LEKZY FX AI PRO {plan_type}!\n"
                     f"• Duration: {days_valid} days\n"
-                    f"• Signals: 50 per day\n"
+                    f"• Signals: {plan_config['daily_signals']} per day\n"
                     f"• All sessions access\n\n"
                     f"*Use /signal to start trading!* 🎯",
                     parse_mode='Markdown'
@@ -952,11 +1116,22 @@ class SimpleTelegramBot:
                 return
             
             if not context.args:
-                await update.message.reply_text("Usage: `/seedtoken DAYS`")
+                await update.message.reply_text(
+                    "Usage: `/seedtoken PLAN_TYPE DAYS`\n\n"
+                    "Available plans: TRIAL, PREMIUM, VIP\n"
+                    "Example: `/seedtoken PREMIUM 30`"
+                )
+                return
+            
+            plan_type = context.args[0].upper()
+            if plan_type not in PlanConfig.PLANS:
+                await update.message.reply_text(
+                    f"❌ Invalid plan type. Available: {', '.join(PlanConfig.PLANS.keys())}"
+                )
                 return
             
             try:
-                days = int(context.args[0])
+                days = int(context.args[1]) if len(context.args) > 1 else PlanConfig.PLANS[plan_type]["days"]
                 if days <= 0:
                     await update.message.reply_text("❌ Days must be positive number.")
                     return
@@ -964,13 +1139,16 @@ class SimpleTelegramBot:
                 await update.message.reply_text("❌ Invalid number of days.")
                 return
             
-            token = self.trading_bot.subscription_manager.token_manager.generate_token(days, user.id)
+            token = self.trading_bot.subscription_manager.token_manager.generate_token(plan_type, days, user.id)
             
             if token:
+                plan_config = PlanConfig.PLANS[plan_type]
                 await update.message.reply_text(
-                    f"🔑 *TOKEN GENERATED* ✅\n\n"
+                    f"🔑 *{plan_config['name']} TOKEN GENERATED* ✅\n\n"
                     f"*Token:* `{token}`\n"
-                    f"*Duration:* {days} days\n\n"
+                    f"*Plan:* {plan_config['name']}\n"
+                    f"*Duration:* {days} days\n"
+                    f"*Signals:* {plan_config['daily_signals']}/day\n\n"
                     f"*Share with users:* `/register {token}`",
                     parse_mode='Markdown'
                 )
@@ -1029,15 +1207,21 @@ class SimpleTelegramBot:
 • Monitor system status
 
 🎯 *Quick Commands:*
-• `/seedtoken DAYS` - Generate tokens
+• `/seedtoken PLAN DAYS` - Generate tokens
 • Use buttons for instant signals
 
-*Admin system operational!* ✅
+*Available Plans for Token Generation:*
 """
+            for plan_id, plan in PlanConfig.PLANS.items():
+                message += f"• {plan['name']} - {plan['days']} days, {plan['daily_signals']} signals/day\n"
+            
+            message += "\n*Admin system operational!* ✅"
+            
             keyboard = [
                 [InlineKeyboardButton("⚡ QUICK TRADE", callback_data="admin_quick")],
                 [InlineKeyboardButton("📈 NORMAL TRADE", callback_data="admin_normal")],
                 [InlineKeyboardButton("🔑 GENERATE TOKENS", callback_data="admin_tokens")],
+                [InlineKeyboardButton("💎 VIEW PLANS", callback_data="show_plans")],
                 [InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1089,13 +1273,14 @@ class SimpleTelegramBot:
 • /start - Start bot & welcome
 • /signal - Get trading signal  
 • /session - Market status
-• /register TOKEN - Activate premium
+• /register TOKEN - Activate subscription
+• /plans - View available plans
 • /mystats - Your statistics
 • /help - This message
 
 *Admin Commands:*
 • /login TOKEN - Admin login
-• /seedtoken DAYS - Generate tokens
+• /seedtoken PLAN DAYS - Generate tokens
 • /admin - Admin dashboard
 • /signal quick - Quick trade (admin only)
 
@@ -1103,29 +1288,65 @@ class SimpleTelegramBot:
 """
         await update.message.reply_text(help_text, parse_mode='Markdown')
 
+    async def plans_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show available subscription plans"""
+        try:
+            if update.message:
+                await self.trading_bot.show_plans_message(update.message.chat_id)
+            elif update.callback_query:
+                await self.trading_bot.show_plans_message(update.callback_query.message.chat_id)
+        except Exception as e:
+            logger.error(f"❌ Plans command failed: {e}")
+            await update.message.reply_text("❌ Could not fetch plans.")
+
     async def mystats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             user = update.effective_user
             subscription = self.trading_bot.subscription_manager.get_user_subscription(user.id)
             is_admin = self.trading_bot.admin_auth.is_admin(user.id)
             
+            plan_emoji = "💎" if subscription['plan_type'] == 'PREMIUM' else "🚀" if subscription['plan_type'] == 'VIP' else "🆓"
+            
             if subscription['plan_type'] == 'PREMIUM' and subscription['subscription_end']:
-                end_date = datetime.fromisoformat(subscription['subscription_end'])
-                days_left = (end_date - datetime.now()).days
-                status = f"✅ Active ({days_left} days left)"
+                try:
+                    end_date = datetime.fromisoformat(subscription['subscription_end'])
+                    days_left = (end_date - datetime.now()).days
+                    status = f"✅ Active ({days_left} days left)"
+                except:
+                    status = "✅ Active"
             else:
                 status = "⏳ Trial"
             
             message = f"""
 📊 *YOUR ACCOUNT STATISTICS*
 
+👤 *User Info:*
 • Name: {user.first_name}
-• Plan: {subscription['plan_type']}
+• Username: @{user.username if user.username else 'N/A'}
+
+💼 *Subscription:*
+• Plan: {plan_emoji} *{subscription['plan_type']}*
 • Status: {status}
-• Signals: {subscription['signals_used']}/{subscription['max_daily_signals']}
-• Admin: {'✅ Yes' if is_admin else '❌ No'}
+• Daily Signals: {subscription['signals_used']}/{subscription['max_daily_signals']}
+• Signals Left: *{subscription['signals_remaining']}*
+
+🔧 *Features:*
+• Admin Access: {'✅ Yes' if is_admin else '❌ No'}
+• Quick Trades: {'✅ Available' if is_admin else '💎 Premium Feature'}
+
+💡 *Tip:* Use /plans to see available upgrades!
 """
-            await update.message.reply_text(message, parse_mode='Markdown')
+            keyboard = [
+                [InlineKeyboardButton("💎 VIEW PLANS", callback_data="show_plans")],
+                [InlineKeyboardButton("🔄 REFRESH STATS", callback_data="show_stats")],
+                [InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            if update.callback_query:
+                await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            else:
+                await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
             
         except Exception as e:
             logger.error(f"❌ Mystats command failed: {e}")
@@ -1146,11 +1367,10 @@ class SimpleTelegramBot:
                 await self.session_command(update, context)
             elif data == "contact_support":
                 await query.edit_message_text(f"📞 *Contact Support:* {Config.ADMIN_CONTACT}", parse_mode='Markdown')
-            elif data == "show_register":
-                await query.edit_message_text(
-                    "💎 *UPGRADE TO PREMIUM*\n\nUse `/register YOUR_TOKEN` to activate premium!\n\n*Contact admin for tokens.*",
-                    parse_mode='Markdown'
-                )
+            elif data == "show_plans":
+                await self.plans_command(update, context)
+            elif data == "show_stats":
+                await self.mystats_command(update, context)
             elif data == "trade_done":
                 await query.edit_message_text("✅ *Trade Executed!* 🎯\n\n*Happy trading!* 💰", parse_mode='Markdown')
             elif data == "admin_panel":
@@ -1170,7 +1390,7 @@ class SimpleTelegramBot:
             elif data == "admin_tokens":
                 if self.trading_bot.admin_auth.is_admin(user.id):
                     await query.edit_message_text(
-                        "🔑 *GENERATE TOKENS*\n\nUse `/seedtoken DAYS` to create subscription tokens.",
+                        "🔑 *GENERATE TOKENS*\n\nUse `/seedtoken PLAN DAYS` to create subscription tokens.\n\nAvailable plans: TRIAL, PREMIUM, VIP",
                         parse_mode='Markdown'
                     )
                 else:
@@ -1204,7 +1424,7 @@ class MainApp:
             
             if success:
                 self.running = True
-                logger.info("🚀 LEKZY FX AI PRO - FIXED VERSION ACTIVE!")
+                logger.info("🚀 LEKZY FX AI PRO - COMPLETE WITH PLAN LIST ACTIVE!")
                 return True
             return False
                 
@@ -1244,5 +1464,5 @@ async def main():
         await app.shutdown()
 
 if __name__ == "__main__":
-    print("🚀 Starting LEKZY FX AI PRO - FIXED VERSION...")
+    print("🚀 Starting LEKZY FX AI PRO - COMPLETE WITH PLAN LIST...")
     asyncio.run(main())
