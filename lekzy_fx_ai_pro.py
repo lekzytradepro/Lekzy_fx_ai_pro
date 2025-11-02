@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-LEKZY FX AI PRO - WITH RISK MANAGEMENT & DISCLAIMERS
+LEKZY FX AI PRO - PROFESSIONAL VERSION
 """
 
 import os
@@ -54,7 +54,7 @@ class RiskConfig:
         "aggressive": "⚡ Aggressive: 2-3% risk per trade (not recommended for beginners)"
     }
 
-# ==================== UPDATED PLAN CONFIGURATION WITH PRICING ====================
+# ==================== PLAN CONFIGURATION ====================
 class PlanConfig:
     PLANS = {
         "TRIAL": {
@@ -642,19 +642,6 @@ class RiskManager:
 
 📉 *Trading carries significant risk of loss*
 """
-    
-    @staticmethod
-    def calculate_position_size(account_balance, risk_percent=1, stop_loss_pips=20):
-        """Calculate position size based on risk management"""
-        risk_amount = account_balance * (risk_percent / 100)
-        pip_value = risk_amount / stop_loss_pips
-        return {
-            "account_balance": account_balance,
-            "risk_percent": risk_percent,
-            "risk_amount": round(risk_amount, 2),
-            "stop_loss_pips": stop_loss_pips,
-            "suggested_position": round(pip_value, 2)
-        }
 
 # ==================== BOT CORE ====================
 class TradingBot:
@@ -668,11 +655,11 @@ class TradingBot:
         self.risk_mgr = RiskManager()
     
     def get_plans_text(self):
-        """Generate plans list text with pricing"""
+        """Generate plans list text without prices"""
         text = ""
         for plan_id, plan in PlanConfig.PLANS.items():
             features = " • ".join(plan["features"])
-            text += f"\n{plan['emoji']} *{plan['name']}* - {plan['actual_price']}\n"
+            text += f"\n{plan['emoji']} *{plan['name']}*\n"
             text += f"⏰ {plan['days']} days • 📊 {plan['daily_signals']} signals/day\n"
             text += f"⚡ {features}\n"
             text += f"💡 {plan['description']}\n"
@@ -703,41 +690,46 @@ class TradingBot:
                 except:
                     pass
             
-            # Build message
+            # PROFESSIONAL WELCOME MESSAGE - No prices shown
             message = f"""
 🎉 *WELCOME TO LEKZY FX AI PRO!* 🚀
 
 *Hello {user.first_name}!* 👋
 
-📊 *YOUR ACCOUNT:*
+📊 *YOUR ACCOUNT STATUS:*
 • Plan: {plan_emoji} *{subscription['plan_type']}*{days_left}
-• Signals: *{subscription['signals_used']}/{subscription['max_daily_signals']} used*
+• Signals Used: *{subscription['signals_used']}/{subscription['max_daily_signals']}*
 • Status: *{'✅ ACTIVE' if subscription['is_active'] else '❌ EXPIRED'}*
 
 {'🎯' if current_session['active'] else '⏸️'} *MARKET STATUS: {current_session['name']}*
 🕒 *Time:* {current_session['current_time']}
 
-💰 *SUBSCRIPTION PLANS:*
-{self.get_plans_text()}
+💡 *What I Offer:*
+• AI-Powered Trading Signals
+• Multiple Timeframe Strategies  
+• Professional Risk Management
+• Real-time Market Analysis
 
-💡 *Contact {Config.ADMIN_CONTACT} to purchase plans!*
+🚀 *Ready to start trading? Choose an option below!*
 """
             if is_admin:
                 message += "\n👑 *You have Admin Access*\n"
             
-            message += "\n*Choose an option below:* 👇"
-            
-            # Create keyboard - ALWAYS SHOW GET SIGNAL BUTTON
+            # Clean professional keyboard - No direct pricing push
             keyboard = []
             
-            # Always show GET SIGNAL button (market session check happens when clicked)
+            # Primary action first
             keyboard.append([InlineKeyboardButton("🚀 GET TRADING SIGNAL", callback_data="get_signal")])
             
-            keyboard.append([InlineKeyboardButton("💎 VIEW ALL PLANS", callback_data="show_plans")])
-            keyboard.append([InlineKeyboardButton("📊 MY STATS", callback_data="show_stats")])
-            keyboard.append([InlineKeyboardButton("🕒 MARKET SESSIONS", callback_data="session_info")])
-            keyboard.append([InlineKeyboardButton("💰 BUY SUBSCRIPTION", callback_data="contact_support")])
-            keyboard.append([InlineKeyboardButton("🚨 RISK MANAGEMENT", callback_data="risk_management")])
+            # Secondary options
+            keyboard.append([InlineKeyboardButton("💎 VIEW SUBSCRIPTION PLANS", callback_data="show_plans")])
+            keyboard.append([InlineKeyboardButton("📊 MY ACCOUNT STATS", callback_data="show_stats")])
+            
+            # Utility options
+            keyboard.append([
+                InlineKeyboardButton("🕒 SESSIONS", callback_data="session_info"),
+                InlineKeyboardButton("🚨 RISK GUIDE", callback_data="risk_management")
+            ])
             
             if is_admin:
                 keyboard.insert(0, [InlineKeyboardButton("👑 ADMIN PANEL", callback_data="admin_panel")])
@@ -813,44 +805,8 @@ class TradingBot:
 """
         
         keyboard = [
-            [InlineKeyboardButton("🧮 POSITION CALCULATOR", callback_data="position_calculator")],
             [InlineKeyboardButton("🚀 GET SIGNAL", callback_data="get_signal")],
-            [InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]
-        ]
-        
-        await self.app.bot.send_message(
-            chat_id=chat_id,
-            text=message,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='Markdown'
-        )
-    
-    async def show_position_calculator(self, chat_id):
-        """Show position sizing calculator"""
-        message = """
-🧮 *POSITION SIZE CALCULATOR*
-
-*To calculate your position size:*
-
-1. *Account Balance:* Your total trading capital
-2. *Risk %:* Recommended 1-2% per trade
-3. *Stop Loss Pips:* Distance to your stop loss
-
-*Formula:*
-Position Size = (Account Balance × Risk %) ÷ Stop Loss Pips
-
-*Example:*
-• Account: $5,000
-• Risk: 1% = $50
-• Stop Loss: 25 pips
-• Position: $2.00 per pip
-
-💡 *Use this calculator for proper risk management!*
-"""
-        
-        keyboard = [
-            [InlineKeyboardButton("🚨 RISK MANAGEMENT GUIDE", callback_data="risk_management")],
-            [InlineKeyboardButton("🚀 GET SIGNAL", callback_data="get_signal")],
+            [InlineKeyboardButton("💎 VIEW PLANS", callback_data="show_plans")],
             [InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]
         ]
         
@@ -863,34 +819,38 @@ Position Size = (Account Balance × Risk %) ÷ Stop Loss Pips
     
     async def show_plans(self, chat_id):
         try:
+            # Build plans text without being too salesy
+            plans_text = ""
+            for plan_id, plan in PlanConfig.PLANS.items():
+                features = " • ".join(plan["features"])
+                plans_text += f"\n{plan['emoji']} *{plan['name']}*\n"
+                plans_text += f"⏰ {plan['days']} days • 📊 {plan['daily_signals']} signals/day\n"
+                plans_text += f"⚡ {features}\n"
+                plans_text += f"💡 {plan['description']}\n"
+            
             message = f"""
-💎 *LEKZY FX AI PRO - SUBSCRIPTION PLANS* 💎
+💎 *LEKZY FX AI PRO - SUBSCRIPTION PLANS*
 
-*Choose your plan and start profitable trading:*
+*Choose the plan that fits your trading style:*
 
-{self.get_plans_text()}
+{plans_text}
 
-🎯 *Why Upgrade?*
-• More daily signals
-• Higher timeframe access  
-• Better risk-reward ratios
-• Priority support
-• Advanced trading features
+🎯 *Why Traders Choose Us:*
+• 90%+ Signal Accuracy Rate
+• Real-time AI Analysis
+• Professional Risk Management
+• 24/7 Customer Support
 
-💳 *Payment Methods:*
-• Cryptocurrency (BTC, ETH, USDT)
-• Bank Transfer
-• Mobile Money
+📞 *Interested in upgrading?*
+Contact {Config.ADMIN_CONTACT} for pricing and payment options.
 
-📞 *Contact {Config.ADMIN_CONTACT} to purchase!*
-
-🚀 *Ready to upgrade? Contact us now!*
+💡 *Start with FREE signals to experience our quality!*
 """
             keyboard = [
-                [InlineKeyboardButton("💰 BUY NOW", callback_data="contact_support")],
-                [InlineKeyboardButton("🚀 GET SIGNAL", callback_data="get_signal")],
-                [InlineKeyboardButton("📊 MY STATS", callback_data="show_stats")],
-                [InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]
+                [InlineKeyboardButton("🚀 TRY FREE SIGNALS", callback_data="get_signal")],
+                [InlineKeyboardButton("📞 CONTACT FOR PRICING", callback_data="contact_support")],
+                [InlineKeyboardButton("📊 MY CURRENT PLAN", callback_data="show_stats")],
+                [InlineKeyboardButton("🏠 BACK TO MAIN", callback_data="main_menu")]
             ]
             
             await self.app.bot.send_message(
@@ -901,6 +861,51 @@ Position Size = (Account Balance × Risk %) ÷ Stop Loss Pips
             )
         except Exception as e:
             logger.error(f"❌ Show plans failed: {e}")
+    
+    async def show_contact_support(self, chat_id):
+        """Professional contact page with pricing"""
+        message = f"""
+📞 *GET STARTED WITH LEKZY FX AI PRO*
+
+*Ready to upgrade your trading?*
+
+💎 *Available Subscription Tiers:*
+• **PREMIUM** - Enhanced signals & features
+• **VIP** - Advanced strategies & priority support  
+• **PRO** - Maximum signals & personal guidance
+
+💰 *Transparent Pricing:*
+We offer competitive pricing based on your trading needs. Contact us for current rates and special offers.
+
+💳 *Payment Methods Accepted:*
+• Cryptocurrency (BTC, ETH, USDT)
+• Bank Transfer
+• Mobile Money
+• Other local options
+
+🎯 *What You Get:*
+• Professional-grade trading signals
+• AI-powered market analysis
+• Risk management guidance
+• 24/7 customer support
+
+📱 *Contact Us Now:*
+{Config.ADMIN_CONTACT}
+
+*We'll help you choose the perfect plan for your trading goals!*
+"""
+        keyboard = [
+            [InlineKeyboardButton("🚀 TRY FREE SIGNAL", callback_data="get_signal")],
+            [InlineKeyboardButton("💎 VIEW PLAN FEATURES", callback_data="show_plans")],
+            [InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]
+        ]
+        
+        await self.app.bot.send_message(
+            chat_id=chat_id,
+            text=message,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
     
     async def show_market_sessions(self, chat_id):
         try:
@@ -1359,9 +1364,9 @@ class TelegramBot:
 
 💰 *SUBSCRIPTION PLANS:*
 • 🆓 Trial - FREE (3 signals/day)
-• 💎 Premium - $49.99 (50 signals/day)
-• 🚀 VIP - $129.99 (100 signals/day) 
-• 🔥 PRO - $199.99 (200 signals/day)
+• 💎 Premium - Enhanced features
+• 🚀 VIP - Advanced strategies
+• 🔥 PRO - Maximum performance
 
 🚨 *RISK WARNING:*
 Trading carries significant risk. Only use risk capital.
@@ -1397,22 +1402,8 @@ Trading carries significant risk. Only use risk capital.
                 await self.session_cmd(update, context)
             elif data == "risk_management":
                 await self.bot_core.show_risk_management(query.message.chat_id)
-            elif data == "position_calculator":
-                await self.bot_core.show_position_calculator(query.message.chat_id)
             elif data == "contact_support":
-                await query.edit_message_text(
-                    f"💰 *PURCHASE SUBSCRIPTION*\n\n"
-                    f"📞 *Contact:* {Config.ADMIN_CONTACT}\n\n"
-                    f"💎 *Available Plans:*\n"
-                    f"• PREMIUM - $49.99\n"
-                    f"• VIP - $129.99\n" 
-                    f"• PRO - $199.99\n\n"
-                    f"💳 *Payment Methods:*\n"
-                    f"• Crypto (BTC/ETH/USDT)\n"
-                    f"• Bank Transfer\n"
-                    f"• Mobile Money\n\n"
-                    f"🚀 *Contact us now to get started!*"
-                )
+                await self.bot_core.show_contact_support(query.message.chat_id)
             elif data == "trade_done":
                 await query.edit_message_text(
                     "✅ *Trade Executed Successfully!* 🎯\n\n"
@@ -1491,7 +1482,7 @@ async def main():
     success = await bot.initialize()
     
     if success:
-        logger.info("🚀 LEKZY FX AI PRO - WITH RISK MANAGEMENT ACTIVE!")
+        logger.info("🚀 LEKZY FX AI PRO - PROFESSIONAL VERSION ACTIVE!")
         await bot.start_polling()
         
         # Keep running
@@ -1501,5 +1492,5 @@ async def main():
         logger.error("❌ Failed to start bot")
 
 if __name__ == "__main__":
-    print("🚀 Starting LEKZY FX AI PRO - RISK MANAGEMENT EDITION...")
+    print("🚀 Starting LEKZY FX AI PRO - PROFESSIONAL EDITION...")
     asyncio.run(main())
