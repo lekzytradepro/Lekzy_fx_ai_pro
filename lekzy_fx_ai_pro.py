@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-LEKZY FX AI PRO - UPDATED WITH PRICING & ACTIVE MARKET SESSIONS
+LEKZY FX AI PRO - WITH RISK MANAGEMENT & DISCLAIMERS
 """
 
 import os
@@ -27,6 +27,32 @@ class Config:
     DB_PATH = "/app/data/lekzy_fx_ai.db"
     PORT = int(os.getenv("PORT", 10000))
     PRE_ENTRY_DELAY = 40  # seconds before entry
+
+# ==================== RISK MANAGEMENT CONFIG ====================
+class RiskConfig:
+    # Risk Disclaimer Messages
+    DISCLAIMERS = {
+        "high_risk": "🚨 *HIGH RISK WARNING*\n\nTrading foreign exchange, cryptocurrencies, and CFDs carries a high level of risk and may not be suitable for all investors.",
+        "past_performance": "📊 *PAST PERFORMANCE*\n\nPast performance is not indicative of future results. No representation is being made that any account will achieve profits or losses similar to those shown.",
+        "risk_capital": "💼 *RISK CAPITAL ONLY*\n\nYou should only trade with money you can afford to lose. Do not use funds allocated for essential expenses.",
+        "seek_advice": "👨‍💼 *SEEK PROFESSIONAL ADVICE*\n\nBefore trading, consider your investment objectives, experience level, and risk tolerance."
+    }
+    
+    # Money Management Rules
+    MONEY_MANAGEMENT = {
+        "rule_1": "💰 *Risk Only 1-2%* of your trading capital per trade",
+        "rule_2": "🎯 *Use Stop Losses* on every trade without exception", 
+        "rule_3": "⚖️ *Maintain 1:1.5 Risk/Reward* ratio minimum",
+        "rule_4": "📊 *Maximum 5%* total capital exposure at any time",
+        "rule_5": "😴 *No Emotional Trading* - stick to your strategy"
+    }
+    
+    # Position Sizing Guidelines
+    POSITION_SIZING = {
+        "conservative": "🛡️ Conservative: 0.5-1% risk per trade",
+        "moderate": "🎯 Moderate: 1-2% risk per trade", 
+        "aggressive": "⚡ Aggressive: 2-3% risk per trade (not recommended for beginners)"
+    }
 
 # ==================== UPDATED PLAN CONFIGURATION WITH PRICING ====================
 class PlanConfig:
@@ -120,7 +146,8 @@ def initialize_database():
                 subscription_end TEXT,
                 max_daily_signals INTEGER DEFAULT 3,
                 signals_used INTEGER DEFAULT 0,
-                joined_at TEXT DEFAULT CURRENT_TIMESTAMP
+                joined_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                risk_acknowledged BOOLEAN DEFAULT FALSE
             )
         """)
 
@@ -267,13 +294,13 @@ class SubscriptionManager:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.execute("""
-                SELECT plan_type, subscription_end, max_daily_signals, signals_used 
+                SELECT plan_type, subscription_end, max_daily_signals, signals_used, risk_acknowledged
                 FROM users WHERE user_id = ?
             """, (user_id,))
             result = cursor.fetchone()
             
             if result:
-                plan_type, sub_end, max_signals, signals_used = result
+                plan_type, sub_end, max_signals, signals_used, risk_acknowledged = result
                 
                 is_active = True
                 if sub_end and plan_type != "TRIAL":
@@ -299,7 +326,8 @@ class SubscriptionManager:
                     "subscription_end": sub_end,
                     "max_daily_signals": max_signals,
                     "signals_used": signals_used,
-                    "signals_remaining": max_signals - signals_used
+                    "signals_remaining": max_signals - signals_used,
+                    "risk_acknowledged": risk_acknowledged
                 }
             else:
                 # Create new trial user
@@ -316,7 +344,8 @@ class SubscriptionManager:
                     "subscription_end": None,
                     "max_daily_signals": 3,
                     "signals_used": 0,
-                    "signals_remaining": 3
+                    "signals_remaining": 3,
+                    "risk_acknowledged": False
                 }
                 
         except Exception as e:
@@ -327,8 +356,23 @@ class SubscriptionManager:
                 "subscription_end": None,
                 "max_daily_signals": 3,
                 "signals_used": 0,
-                "signals_remaining": 3
+                "signals_remaining": 3,
+                "risk_acknowledged": False
             }
+    
+    def mark_risk_acknowledged(self, user_id):
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.execute(
+                "UPDATE users SET risk_acknowledged = TRUE WHERE user_id = ?",
+                (user_id,)
+            )
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            logger.error(f"❌ Risk acknowledgment failed: {e}")
+            return False
     
     def can_user_request_signal(self, user_id):
         subscription = self.get_user_subscription(user_id)
@@ -551,6 +595,67 @@ class UserManager:
             logger.error(f"❌ User add failed: {e}")
             return False
 
+# ==================== RISK MANAGEMENT SYSTEM ====================
+class RiskManager:
+    @staticmethod
+    def get_risk_disclaimer():
+        return f"""
+🚨 *IMPORTANT RISK DISCLAIMER* 🚨
+
+{RiskConfig.DISCLAIMERS['high_risk']}
+
+{RiskConfig.DISCLAIMERS['past_performance']}
+
+{RiskConfig.DISCLAIMERS['risk_capital']}
+
+{RiskConfig.DISCLAIMERS['seek_advice']}
+
+*By using this bot, you acknowledge and accept these risks.*
+"""
+    
+    @staticmethod
+    def get_money_management_rules():
+        rules = "\n".join([f"• {rule}" for rule in RiskConfig.MONEY_MANAGEMENT.values()])
+        return f"""
+💰 *ESSENTIAL MONEY MANAGEMENT RULES* 💰
+
+{rules}
+
+📊 *Position Sizing Guide:*
+• {RiskConfig.POSITION_SIZING['conservative']}
+• {RiskConfig.POSITION_SIZING['moderate']}
+• {RiskConfig.POSITION_SIZING['aggressive']}
+
+*Always use proper risk management!*
+"""
+    
+    @staticmethod
+    def get_trade_warning():
+        return """
+⚠️ *TRADE EXECUTION WARNING* ⚠️
+
+🚨 *RISK MANAGEMENT REQUIRED:*
+• Set STOP LOSS immediately after entry
+• Risk only 1-2% of your account per trade
+• Ensure 1:1.5+ Risk/Reward ratio
+• Trade with money you can afford to lose
+
+📉 *Trading carries significant risk of loss*
+"""
+    
+    @staticmethod
+    def calculate_position_size(account_balance, risk_percent=1, stop_loss_pips=20):
+        """Calculate position size based on risk management"""
+        risk_amount = account_balance * (risk_percent / 100)
+        pip_value = risk_amount / stop_loss_pips
+        return {
+            "account_balance": account_balance,
+            "risk_percent": risk_percent,
+            "risk_amount": round(risk_amount, 2),
+            "stop_loss_pips": stop_loss_pips,
+            "suggested_position": round(pip_value, 2)
+        }
+
 # ==================== BOT CORE ====================
 class TradingBot:
     def __init__(self, application):
@@ -560,6 +665,7 @@ class TradingBot:
         self.user_mgr = UserManager(Config.DB_PATH)
         self.sub_mgr = SubscriptionManager(Config.DB_PATH)
         self.admin_auth = AdminAuth()
+        self.risk_mgr = RiskManager()
     
     def get_plans_text(self):
         """Generate plans list text with pricing"""
@@ -581,6 +687,11 @@ class TradingBot:
             subscription = self.sub_mgr.get_user_subscription(user.id)
             current_session = self.session_mgr.get_current_session()
             is_admin = self.admin_auth.is_admin(user.id)
+            
+            # Check if user needs to acknowledge risk
+            if not subscription.get('risk_acknowledged', False):
+                await self.show_risk_disclaimer(user.id, chat_id)
+                return
             
             # Plan info
             plan_emoji = PlanConfig.PLANS.get(subscription['plan_type'], {}).get('emoji', '🆓')
@@ -626,6 +737,7 @@ class TradingBot:
             keyboard.append([InlineKeyboardButton("📊 MY STATS", callback_data="show_stats")])
             keyboard.append([InlineKeyboardButton("🕒 MARKET SESSIONS", callback_data="session_info")])
             keyboard.append([InlineKeyboardButton("💰 BUY SUBSCRIPTION", callback_data="contact_support")])
+            keyboard.append([InlineKeyboardButton("🚨 RISK MANAGEMENT", callback_data="risk_management")])
             
             if is_admin:
                 keyboard.insert(0, [InlineKeyboardButton("👑 ADMIN PANEL", callback_data="admin_panel")])
@@ -649,6 +761,105 @@ class TradingBot:
                 chat_id=chat_id,
                 text=f"Welcome {user.first_name}! Use /start to see options."
             )
+    
+    async def show_risk_disclaimer(self, user_id, chat_id):
+        """Show risk disclaimer and require acknowledgment"""
+        disclaimer = self.risk_mgr.get_risk_disclaimer()
+        
+        message = f"""
+{disclaimer}
+
+🔒 *ACCOUNT SETUP REQUIRED*
+
+*Before you can start trading, you must acknowledge and understand the risks involved in trading.*
+
+📋 *Please read the above carefully and confirm your understanding.*
+"""
+        
+        keyboard = [
+            [InlineKeyboardButton("✅ I UNDERSTAND & ACCEPT THE RISKS", callback_data="accept_risks")],
+            [InlineKeyboardButton("❌ CANCEL", callback_data="cancel_risks")]
+        ]
+        
+        await self.app.bot.send_message(
+            chat_id=chat_id,
+            text=message,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+    
+    async def show_risk_management(self, chat_id):
+        """Show comprehensive risk management guide"""
+        risk_rules = self.risk_mgr.get_money_management_rules()
+        
+        message = f"""
+🛡️ *COMPREHENSIVE RISK MANAGEMENT GUIDE* 🛡️
+
+{risk_rules}
+
+📈 *Example Position Sizing:*
+• Account: $1,000
+• Risk: 1% = $10 per trade
+• Stop Loss: 20 pips
+• Position Size: $0.50 per pip
+
+💡 *Key Principles:*
+• Preserve capital above all else
+• Never risk more than you can afford to lose
+• Emotional control is crucial
+• Consistency beats occasional big wins
+
+🚨 *Remember: Professional traders focus on risk management first, profits second!*
+"""
+        
+        keyboard = [
+            [InlineKeyboardButton("🧮 POSITION CALCULATOR", callback_data="position_calculator")],
+            [InlineKeyboardButton("🚀 GET SIGNAL", callback_data="get_signal")],
+            [InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]
+        ]
+        
+        await self.app.bot.send_message(
+            chat_id=chat_id,
+            text=message,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+    
+    async def show_position_calculator(self, chat_id):
+        """Show position sizing calculator"""
+        message = """
+🧮 *POSITION SIZE CALCULATOR*
+
+*To calculate your position size:*
+
+1. *Account Balance:* Your total trading capital
+2. *Risk %:* Recommended 1-2% per trade
+3. *Stop Loss Pips:* Distance to your stop loss
+
+*Formula:*
+Position Size = (Account Balance × Risk %) ÷ Stop Loss Pips
+
+*Example:*
+• Account: $5,000
+• Risk: 1% = $50
+• Stop Loss: 25 pips
+• Position: $2.00 per pip
+
+💡 *Use this calculator for proper risk management!*
+"""
+        
+        keyboard = [
+            [InlineKeyboardButton("🚨 RISK MANAGEMENT GUIDE", callback_data="risk_management")],
+            [InlineKeyboardButton("🚀 GET SIGNAL", callback_data="get_signal")],
+            [InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]
+        ]
+        
+        await self.app.bot.send_message(
+            chat_id=chat_id,
+            text=message,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
     
     async def show_plans(self, chat_id):
         try:
@@ -741,6 +952,12 @@ class TradingBot:
     
     async def generate_signal(self, user_id, chat_id, signal_style="NORMAL", is_admin=False):
         try:
+            # Check if user acknowledged risks
+            subscription = self.sub_mgr.get_user_subscription(user_id)
+            if not subscription.get('risk_acknowledged', False):
+                await self.show_risk_disclaimer(user_id, chat_id)
+                return
+            
             # Check subscription
             if not is_admin:
                 can_request, msg = self.sub_mgr.can_user_request_signal(user_id)
@@ -827,7 +1044,9 @@ class TradingBot:
         if not is_admin:
             self.sub_mgr.increment_signal_count(user_id)
         
-        # Send entry signal
+        # Send entry signal with risk warning
+        risk_warning = self.risk_mgr.get_trade_warning()
+        
         entry_msg = f"""
 🎯 *ENTRY SIGNAL* ✅
 
@@ -841,12 +1060,15 @@ class TradingBot:
 🎯 *Confidence:* {entry_signal['confidence']*100:.1f}%
 ⚖️ *Risk/Reward:* 1:{entry_signal.get('risk_reward', 1.5)}
 
+{risk_warning}
+
 *Execute this trade now!* 🚀
 """
         keyboard = [
             [InlineKeyboardButton("✅ TRADE EXECUTED", callback_data="trade_done")],
             [InlineKeyboardButton("🔄 NEW SIGNAL", callback_data="get_signal")],
-            [InlineKeyboardButton("💎 UPGRADE PLAN", callback_data="show_plans")]
+            [InlineKeyboardButton("💎 UPGRADE PLAN", callback_data="show_plans")],
+            [InlineKeyboardButton("🚨 RISK MANAGEMENT", callback_data="risk_management")]
         ]
         
         if is_admin:
@@ -886,6 +1108,7 @@ class TelegramBot:
                 CommandHandler("admin", self.admin_cmd),
                 CommandHandler("seedtoken", self.seedtoken_cmd),
                 CommandHandler("help", self.help_cmd),
+                CommandHandler("risk", self.risk_cmd),
                 CallbackQueryHandler(self.button_handler)
             ]
             
@@ -904,6 +1127,9 @@ class TelegramBot:
     async def start_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         await self.bot_core.send_welcome(user, update.effective_chat.id)
+    
+    async def risk_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await self.bot_core.show_risk_management(update.effective_chat.id)
     
     async def signal_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
@@ -988,12 +1214,14 @@ class TelegramBot:
 📈 *Signals Today:* {subscription['signals_used']}/{subscription['max_daily_signals']}
 🎯 *Status:* {'✅ ACTIVE' if subscription['is_active'] else '❌ EXPIRED'}
 🔑 *Admin Access:* {'✅ YES' if is_admin else '❌ NO'}
+🛡️ *Risk Acknowledged:* {'✅ YES' if subscription.get('risk_acknowledged', False) else '❌ NO'}
 
 💡 *Recommendation:* {'🎉 You have the best plan!' if subscription['plan_type'] == 'PRO' else '💎 Consider upgrading for more signals!'}
 """
         keyboard = [
             [InlineKeyboardButton("💎 VIEW PLANS", callback_data="show_plans")],
             [InlineKeyboardButton("🚀 GET SIGNAL", callback_data="get_signal")],
+            [InlineKeyboardButton("🚨 RISK MANAGEMENT", callback_data="risk_management")],
             [InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]
         ]
         
@@ -1120,6 +1348,7 @@ class TelegramBot:
 • /plans - View subscription plans & pricing
 • /register TOKEN - Activate subscription
 • /mystats - Your account statistics
+• /risk - Risk management guide
 
 👑 *ADMIN COMMANDS:*
 • /login TOKEN - Admin access
@@ -1133,6 +1362,9 @@ class TelegramBot:
 • 💎 Premium - $49.99 (50 signals/day)
 • 🚀 VIP - $129.99 (100 signals/day) 
 • 🔥 PRO - $199.99 (200 signals/day)
+
+🚨 *RISK WARNING:*
+Trading carries significant risk. Only use risk capital.
 
 📞 *Support & Purchases:* @LekzyTradingPro
 
@@ -1163,6 +1395,10 @@ class TelegramBot:
                 await self.mystats_cmd(update, context)
             elif data == "session_info":
                 await self.session_cmd(update, context)
+            elif data == "risk_management":
+                await self.bot_core.show_risk_management(query.message.chat_id)
+            elif data == "position_calculator":
+                await self.bot_core.show_position_calculator(query.message.chat_id)
             elif data == "contact_support":
                 await query.edit_message_text(
                     f"💰 *PURCHASE SUBSCRIPTION*\n\n"
@@ -1178,7 +1414,32 @@ class TelegramBot:
                     f"🚀 *Contact us now to get started!*"
                 )
             elif data == "trade_done":
-                await query.edit_message_text("✅ *Trade Executed Successfully!* 🎯\n\n*Happy trading! May the profits be with you!* 💰")
+                await query.edit_message_text(
+                    "✅ *Trade Executed Successfully!* 🎯\n\n"
+                    "*Remember to always use proper risk management!*\n"
+                    "*Happy trading! May the profits be with you!* 💰"
+                )
+            elif data == "accept_risks":
+                # Mark user as having acknowledged risks
+                success = self.bot_core.sub_mgr.mark_risk_acknowledged(user.id)
+                if success:
+                    await query.edit_message_text(
+                        "✅ *Risk Acknowledgement Confirmed!* 🛡️\n\n"
+                        "*You can now access all trading features.*\n"
+                        "*Remember to always trade responsibly!*\n\n"
+                        "*Redirecting to main menu...*"
+                    )
+                    await asyncio.sleep(2)
+                    await self.start_cmd(update, context)
+                else:
+                    await query.edit_message_text("❌ Failed to save acknowledgment. Please try /start again.")
+            elif data == "cancel_risks":
+                await query.edit_message_text(
+                    "❌ *Risk Acknowledgement Required*\n\n"
+                    "*You must acknowledge the risks before trading.*\n"
+                    "*Use /start when you're ready to proceed.*\n\n"
+                    "*Trading involves significant risk of loss.*"
+                )
             elif data == "admin_panel":
                 await self.admin_cmd(update, context)
             elif data == "admin_quick":
@@ -1230,7 +1491,7 @@ async def main():
     success = await bot.initialize()
     
     if success:
-        logger.info("🚀 LEKZY FX AI PRO - UPDATED WITH PRICING & ACTIVE SESSIONS!")
+        logger.info("🚀 LEKZY FX AI PRO - WITH RISK MANAGEMENT ACTIVE!")
         await bot.start_polling()
         
         # Keep running
@@ -1240,5 +1501,5 @@ async def main():
         logger.error("❌ Failed to start bot")
 
 if __name__ == "__main__":
-    print("🚀 Starting LEKZY FX AI PRO - ENHANCED VERSION...")
+    print("🚀 Starting LEKZY FX AI PRO - RISK MANAGEMENT EDITION...")
     asyncio.run(main())
