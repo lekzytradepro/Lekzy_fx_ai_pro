@@ -731,6 +731,14 @@ class TradingBot:
             # Dynamic keyboard based on user's plan
             keyboard = []
             
+            # ✅ ADMIN BUTTONS - ADDED AT TOP
+            if is_admin:
+                keyboard.append([InlineKeyboardButton("👑 ADMIN PANEL", callback_data="admin_panel")])
+                keyboard.append([
+                    InlineKeyboardButton("⚡ ADMIN QUICK", callback_data="admin_quick"),
+                    InlineKeyboardButton("📈 ADMIN SWING", callback_data="admin_swing")
+                ])
+            
             if has_quick_trades or is_admin:
                 # Premium+ users see both options
                 keyboard.append([
@@ -751,13 +759,6 @@ class TradingBot:
                 InlineKeyboardButton("🕒 SESSIONS", callback_data="session_info"),
                 InlineKeyboardButton("🚨 RISK GUIDE", callback_data="risk_management")
             ])
-            
-            if is_admin:
-                keyboard.insert(0, [InlineKeyboardButton("👑 ADMIN PANEL", callback_data="admin_panel")])
-                keyboard.insert(2, [
-                    InlineKeyboardButton("⚡ QUICK", callback_data="admin_quick"),
-                    InlineKeyboardButton("📈 SWING", callback_data="admin_swing")
-                ])
             
             reply_markup = InlineKeyboardMarkup(keyboard)
             
@@ -903,10 +904,10 @@ class TradingBot:
             for plan_id, plan in PlanConfig.PLANS.items():
                 features = " • ".join(plan["features"])
                 recommended_badge = " 🏆 **MOST POPULAR**" if plan.get("recommended", False) else ""
-                text += f"\n{plan['emoji']} *{plan['name']}* - {plan['actual_price']}{recommended_badge}\n"
-                text += f"⏰ {plan['days']} days • 📊 {plan['daily_signals']} signals/day\n"
-                text += f"⚡ {features}\n"
-                text += f"💡 {plan['description']}\n"
+                plans_text += f"\n{plan['emoji']} *{plan['name']}* - {plan['actual_price']}{recommended_badge}\n"
+                plans_text += f"⏰ {plan['days']} days • 📊 {plan['daily_signals']} signals/day\n"
+                plans_text += f"⚡ {features}\n"
+                plans_text += f"💡 {plan['description']}\n"
             
             message = f"""
 💎 *LEKZY FX AI PRO - SUBSCRIPTION PLANS*
@@ -1514,6 +1515,44 @@ Trading carries significant risk. Only use risk capital.
                     user.id, query.message.chat_id, style, 
                     self.bot_core.admin_auth.is_admin(user.id)
                 )
+                
+            # ✅ FIXED: ADD ADMIN PANEL BUTTON HANDLER
+            elif data == "admin_panel":
+                if self.bot_core.admin_auth.is_admin(user.id):
+                    await self.admin_cmd(update, context)
+                else:
+                    await query.edit_message_text(
+                        "❌ Admin access required.\n\n"
+                        "Use `/login ADMIN_TOKEN` to access admin features."
+                    )
+                    
+            elif data == "admin_quick":
+                if self.bot_core.admin_auth.is_admin(user.id):
+                    await self.bot_core.generate_signal(user.id, query.message.chat_id, "QUICK", True)
+                else:
+                    await query.edit_message_text("❌ Admin access required for quick trades")
+                    
+            elif data == "admin_swing":
+                if self.bot_core.admin_auth.is_admin(user.id):
+                    await self.bot_core.generate_signal(user.id, query.message.chat_id, "SWING", True)
+                else:
+                    await query.edit_message_text("❌ Admin access required for swing trades")
+                    
+            elif data == "admin_tokens":
+                if self.bot_core.admin_auth.is_admin(user.id):
+                    await query.edit_message_text(
+                        "🔑 *GENERATE SUBSCRIPTION TOKENS*\n\n"
+                        "Use `/seedtoken PLAN DAYS` to create tokens.\n\n"
+                        "📋 *Available Plans:*\n"
+                        "• TRIAL - 7 days, 3 signals\n"
+                        "• PREMIUM - $49.99 (30 days)\n"
+                        "• VIP - $129.99 (90 days)\n"
+                        "• PRO - $199.99 (180 days)\n\n"
+                        "💡 *Example:* `/seedtoken PREMIUM 30`"
+                    )
+                else:
+                    await query.edit_message_text("❌ Admin access required")
+                    
             elif data == "show_plans":
                 await self.plans_cmd(update, context)
             elif data == "show_stats":
@@ -1551,32 +1590,6 @@ Trading carries significant risk. Only use risk capital.
                     "*Use /start when you're ready to proceed.*\n\n"
                     "*Trading involves significant risk of loss.*"
                 )
-            elif data == "admin_panel":
-                await self.admin_cmd(update, context)
-            elif data == "admin_quick":
-                if self.bot_core.admin_auth.is_admin(user.id):
-                    await self.bot_core.generate_signal(user.id, query.message.chat_id, "QUICK", True)
-                else:
-                    await query.edit_message_text("❌ Admin access required for quick trades")
-            elif data == "admin_swing":
-                if self.bot_core.admin_auth.is_admin(user.id):
-                    await self.bot_core.generate_signal(user.id, query.message.chat_id, "SWING", True)
-                else:
-                    await query.edit_message_text("❌ Admin access required for swing trades")
-            elif data == "admin_tokens":
-                if self.bot_core.admin_auth.is_admin(user.id):
-                    await query.edit_message_text(
-                        "🔑 *GENERATE SUBSCRIPTION TOKENS*\n\n"
-                        "Use `/seedtoken PLAN DAYS` to create tokens.\n\n"
-                        "📋 *Available Plans:*\n"
-                        "• TRIAL - 7 days, 3 signals\n"
-                        "• PREMIUM - $49.99 (30 days)\n"
-                        "• VIP - $129.99 (90 days)\n"
-                        "• PRO - $199.99 (180 days)\n\n"
-                        "💡 *Example:* `/seedtoken PREMIUM 30`"
-                    )
-                else:
-                    await query.edit_message_text("❌ Admin access required")
             elif data == "main_menu":
                 await self.start_cmd(update, context)
                 
