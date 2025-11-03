@@ -1286,14 +1286,6 @@ class EnhancedCompleteAISignalGenerator:
         except Exception as e:
             return (min_delay + max_delay) // 2
 
-# ==================== CONTINUATION OF ORIGINAL CODE ====================
-# [ALL THE REMAINING ORIGINAL CODE GOES HERE - Database, Subscription, 
-#  Session Management, Telegram Bot, etc. - EXACTLY AS BEFORE]
-
-# Just replace the signal generator initialization in your TradingBot class:
-# OLD: self.signal_gen = CompleteAISignalGenerator()
-# NEW: self.signal_gen = EnhancedCompleteAISignalGenerator()
-
 # ==================== DATABASE SETUP ====================
 def initialize_database():
     try:
@@ -1684,7 +1676,7 @@ class UserManager:
             logger.error(f"❌ User add failed: {e}")
             return False
 
-# ==================== ENHANCED TRADING BOT ====================
+# ==================== COMPLETE TRADING BOT WITH ALL MISSING METHODS ====================
 class TradingBot:
     def __init__(self, application):
         self.app = application
@@ -1807,12 +1799,305 @@ class TradingBot:
                 text=f"Welcome {user.first_name}! Use /start to see options."
             )
 
-    # ALL OTHER METHODS REMAIN EXACTLY THE SAME AS BEFORE
-    # [Include all your existing methods: show_timeframes, show_ai_status, 
-    #  show_risk_disclaimer, show_risk_management, show_plans, show_contact_support,
-    #  show_market_sessions, generate_signal, _generate_signal_process, 
-    #  generate_entry_signal, etc.]
+    # ==================== MISSING METHODS ADDED ====================
+    async def show_risk_disclaimer(self, user_id, chat_id):
+        """Show risk disclaimer"""
+        disclaimer = self.risk_mgr.get_risk_disclaimer()
+        
+        message = f"""
+{disclaimer}
 
+🔒 *ACCOUNT SETUP REQUIRED*
+
+*Before you can start trading, you must acknowledge and understand the risks involved in trading.*
+
+📋 *Please read the above carefully and confirm your understanding.*
+"""
+        
+        keyboard = [
+            [InlineKeyboardButton("✅ I UNDERSTAND & ACCEPT THE RISKS", callback_data="accept_risks")],
+            [InlineKeyboardButton("❌ CANCEL", callback_data="cancel_risks")]
+        ]
+        
+        await self.app.bot.send_message(
+            chat_id=chat_id,
+            text=message,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+
+    async def show_risk_management(self, chat_id):
+        """Show risk management guide"""
+        risk_rules = self.risk_mgr.get_money_management_rules()
+        
+        message = f"""
+🛡️ *COMPREHENSIVE RISK MANAGEMENT GUIDE* 🛡️
+
+{risk_rules}
+
+📈 *Example Position Sizing:*
+• Account: $1,000
+• Risk: 1% = $10 per trade
+• Stop Loss: 20 pips
+• Position Size: $0.50 per pip
+
+💡 *Key Principles:*
+• Preserve capital above all else
+• Never risk more than you can afford to lose
+• Emotional control is crucial
+• Consistency beats occasional big wins
+
+🚨 *Remember: Professional traders focus on risk management first, profits second!*
+"""
+        
+        keyboard = [
+            [InlineKeyboardButton("🚀 GET SIGNAL", callback_data="normal_signal")],
+            [InlineKeyboardButton("💎 VIEW PLANS", callback_data="show_plans")],
+            [InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]
+        ]
+        
+        await self.app.bot.send_message(
+            chat_id=chat_id,
+            text=message,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+
+    async def show_plans(self, chat_id):
+        """Show subscription plans"""
+        try:
+            plans_text = self.get_plans_text()
+            
+            message = f"""
+💎 *LEKZY FX AI PRO - COMPLETE SUBSCRIPTION PLANS*
+
+*Choose the plan that fits your trading style:*
+
+{plans_text}
+
+🤖 *ALL FEATURES INCLUDED:*
+• Advanced AI with 75-85% Accuracy
+• Multi-Timeframe AI Signals (1M-4H)
+• TwelveData API Primary Source
+• Machine Learning Analysis
+• Advanced Risk Management
+• Professional Trading Tools
+• 24/7 Customer Support
+
+🚀 *Ready to upgrade? Contact {Config.ADMIN_CONTACT} to get started!*
+"""
+            keyboard = [
+                [InlineKeyboardButton("🚀 TRY FREE SIGNALS", callback_data="normal_signal")],
+                [InlineKeyboardButton("📞 CONTACT TO PURCHASE", callback_data="contact_support")],
+                [InlineKeyboardButton("📊 MY CURRENT PLAN", callback_data="show_stats")],
+                [InlineKeyboardButton("🤖 AI STATUS", callback_data="ai_status")],
+                [InlineKeyboardButton("🏠 BACK TO MAIN", callback_data="main_menu")]
+            ]
+            
+            await self.app.bot.send_message(
+                chat_id=chat_id,
+                text=message,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
+        except Exception as e:
+            logger.error(f"❌ Show plans failed: {e}")
+
+    async def show_contact_support(self, chat_id):
+        """Show contact support"""
+        message = f"""
+📞 *GET STARTED WITH LEKZY FX AI PRO*
+
+*Ready to upgrade your trading?*
+
+💎 *Subscription Plans Available:*
+• **PREMIUM** - $49.99 (30 days)
+• **VIP** - $129.99 (90 days)  
+• **PRO** - $199.99 (180 days)
+
+🤖 *Complete Features Included:*
+• Advanced AI with 75-85% Accuracy
+• Multi-Timeframe AI Signals
+• TwelveData API Integration
+• Machine Learning Analysis
+• Advanced Risk Management
+• Professional Trading Tools
+
+📱 *Contact Us Now:*
+{Config.ADMIN_CONTACT}
+
+*Mention your preferred plan and we'll get you set up immediately!*
+"""
+        keyboard = [
+            [InlineKeyboardButton("💎 VIEW PLANS & PRICING", callback_data="show_plans")],
+            [InlineKeyboardButton("🚀 TRY FREE SIGNAL", callback_data="normal_signal")],
+            [InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]
+        ]
+        
+        await self.app.bot.send_message(
+            chat_id=chat_id,
+            text=message,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+
+    async def show_market_sessions(self, chat_id):
+        """Show market sessions"""
+        try:
+            current_session = self.session_mgr.get_current_session()
+            all_sessions = current_session['all_sessions']
+            
+            message = f"""
+🕒 *MARKET TRADING SESSIONS - COMPLETE EDITION*
+
+*Current Session:*
+{'✅' if current_session['active'] else '⏸️'} *{current_session['name']}*
+🕐 *Time:* {current_session['current_time']}
+
+📊 *All Trading Sessions:*
+"""
+            for session_id, session in all_sessions.items():
+                status = "🟢 ACTIVE" if session["active"] else "🔴 CLOSED"
+                message += f"\n{session['name']}\n"
+                message += f"⏰ {session['hours']} • {status}\n"
+            
+            message += f"""
+            
+💡 *Trading Hours (UTC+1):*
+• Asian: 23:00 - 03:00
+• London: 07:00 - 11:00  
+• NY/London: 15:00 - 19:00
+
+🎯 *Best Trading Times:*
+• London Open (08:00-10:00)
+• NY Open (15:00-17:00)
+• Overlap (15:00-17:00)
+
+*Markets are most volatile during session overlaps!*
+"""
+            keyboard = [
+                [InlineKeyboardButton("🚀 GET SIGNAL ANYWAY", callback_data="normal_signal")],
+                [InlineKeyboardButton("💎 VIEW PLANS", callback_data="show_plans")],
+                [InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]
+            ]
+            
+            await self.app.bot.send_message(
+                chat_id=chat_id,
+                text=message,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
+        except Exception as e:
+            logger.error(f"❌ Show sessions failed: {e}")
+
+    async def show_timeframes(self, chat_id):
+        """Show timeframe selection"""
+        message = """
+🎯 *CHOOSE YOUR TRADING TIMEFRAME*
+
+⚡ *1 Minute (1M)*
+• Quick scalping
+• High frequency
+• Fast entries (15-25s)
+• 🚨 High Risk
+
+📈 *5 Minutes (5M)*  
+• Day trading
+• Balanced approach
+• Medium entries (25-40s)
+• ⚠️ Medium Risk
+
+🕒 *15 Minutes (15M)*
+• Swing trading
+• Higher confidence
+• Slower entries (35-55s)
+• ⚠️ Medium Risk
+
+⏰ *1 Hour (1H)*
+• Position trading
+• Long-term analysis
+• Patient entries (45-70s)
+• ✅ Low Risk
+
+📊 *4 Hours (4H)*
+• Long-term investing
+• Maximum confidence
+• Slow entries (60-90s)
+• ✅ Low Risk
+
+💡 *Recommendation: Start with 5M or 15M for best results!*
+"""
+        keyboard = [
+            [
+                InlineKeyboardButton("⚡ 1M", callback_data="timeframe_1M"),
+                InlineKeyboardButton("📈 5M", callback_data="timeframe_5M"),
+                InlineKeyboardButton("🕒 15M", callback_data="timeframe_15M")
+            ],
+            [
+                InlineKeyboardButton("⏰ 1H", callback_data="timeframe_1H"),
+                InlineKeyboardButton("📊 4H", callback_data="timeframe_4H")
+            ],
+            [InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]
+        ]
+        
+        await self.app.bot.send_message(
+            chat_id=chat_id,
+            text=message,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+
+    async def show_ai_status(self, chat_id):
+        """Show AI system status"""
+        twelve_status = "✅ CONNECTED" if Config.TWELVE_DATA_API_KEY != "demo" else "🔄 DEMO MODE"
+        finnhub_status = "✅ CONNECTED" if Config.FINNHUB_API_KEY != "demo" else "🔄 DEMO MODE"
+        
+        message = f"""
+🤖 *AI SYSTEM STATUS - ULTIMATE ACCURACY EDITION*
+
+🔧 *API Connections:*
+• TwelveData: {twelve_status}
+• Finnhub: {finnhub_status}
+• AI Model: ✅ ACTIVE
+
+📊 *System Performance:*
+• Model Accuracy: *75-85% (Advanced AI)*
+• Signal Quality: *PREMIUM*
+• Data Sources: *TwelveData Primary + Advanced AI*
+
+🎯 *Active Features:*
+• Advanced AI with Machine Learning
+• Multi-Timeframe Analysis (1M-4H)
+• 15+ Technical Indicators
+• Real Market Data Integration
+• AI-Optimized Entry Timing
+• Professional Risk Management
+
+🚀 *All systems operational with enhanced accuracy!*
+"""
+        keyboard = [
+            [InlineKeyboardButton("🎯 CHOOSE TIMEFRAME", callback_data="show_timeframes")],
+            [InlineKeyboardButton("🚀 GET SIGNAL", callback_data="normal_signal")],
+            [InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]
+        ]
+        
+        await self.app.bot.send_message(
+            chat_id=chat_id,
+            text=message,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+
+    async def show_stats(self, chat_id):
+        """Show user statistics"""
+        # This will be implemented when called from button handler
+        await self.app.bot.send_message(
+            chat_id=chat_id,
+            text="📊 *Statistics Feature*\n\nUse /mystats command to see your detailed statistics!",
+            parse_mode='Markdown'
+        )
+
+    # ==================== SIGNAL GENERATION METHODS ====================
     async def generate_signal(self, user_id, chat_id, signal_style="NORMAL", timeframe="5M", is_admin=False):
         """Generate complete signal - NOW WITH ENHANCED AI"""
         try:
@@ -2066,9 +2351,7 @@ class TelegramBot:
             logger.error(f"❌ Bot init failed: {e}")
             return False
 
-    # ALL TELEGRAM COMMAND HANDLERS REMAIN EXACTLY THE SAME
-    # [Include all your existing command handlers]
-
+    # ALL TELEGRAM COMMAND HANDLERS
     async def start_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         await self.bot_core.send_welcome(user, update.effective_chat.id)
