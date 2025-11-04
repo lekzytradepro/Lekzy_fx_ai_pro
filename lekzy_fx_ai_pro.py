@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 LEKZY FX AI PRO - COMPLETE ULTIMATE EDITION 
-FULLY FIXED VERSION - Event Loop Issues Resolved
+FULLY FIXED VERSION - All Event Loop Issues Resolved
 """
 
 import os
@@ -199,37 +199,37 @@ class WorldClassAIPredictor:
         self.quantum_states = {}
         self.neural_consensus = {}
         
-    async def initialize(self):
-        """Initialize ALL AI systems"""
+    def initialize(self):
+        """Initialize ALL AI systems - SYNCHRONOUS VERSION"""
         logger.info("🌍 Initializing COMPLETE AI Systems...")
-        await self.initialize_quantum_rsi()
-        await self.initialize_neural_macd()
-        await self.initialize_fractal_analysis()
-        await self.initialize_quantum_entropy()
+        self.initialize_quantum_rsi()
+        self.initialize_neural_macd()
+        self.initialize_fractal_analysis()
+        self.initialize_quantum_entropy()
         logger.info("✅ ALL AI Systems Initialized")
         return True
     
-    async def initialize_quantum_rsi(self):
+    def initialize_quantum_rsi(self):
         """Quantum RSI Analysis"""
         self.quantum_states = {
             "OVERSOLD": 0.3, "NEUTRAL": 0.5, "OVERBOUGHT": 0.7,
             "QUANTUM_BULLISH": 0.6, "QUANTUM_BEARISH": 0.4
         }
     
-    async def initialize_neural_macd(self):
+    def initialize_neural_macd(self):
         """Neural MACD Networks"""
         self.neural_consensus = {
             "STRONG_BUY": 0.8, "BUY": 0.6, "NEUTRAL": 0.5,
             "SELL": 0.4, "STRONG_SELL": 0.2
         }
     
-    async def initialize_fractal_analysis(self):
+    def initialize_fractal_analysis(self):
         """Fractal Dimension Analysis"""
         self.fractal_levels = {
             "LOW_COMPLEXITY": 0.7, "MEDIUM_COMPLEXITY": 0.5, "HIGH_COMPLEXITY": 0.3
         }
     
-    async def initialize_quantum_entropy(self):
+    def initialize_quantum_entropy(self):
         """Quantum Entropy Measurement"""
         self.entropy_levels = {
             "LOW_ENTROPY": 0.8, "MEDIUM_ENTROPY": 0.5, "HIGH_ENTROPY": 0.2
@@ -346,10 +346,12 @@ class CompleteSignalGenerator:
     def __init__(self):
         self.ai_predictor = WorldClassAIPredictor()
         self.pairs = Config.TRADING_PAIRS
-        
-    async def initialize(self):
-        await self.ai_predictor.initialize()
+    
+    def initialize(self):
+        """SYNCHRONOUS initialization"""
+        self.ai_predictor.initialize()
         logger.info("✅ Complete Signal Generator Initialized")
+        return True
     
     def get_current_session(self):
         """Get current trading session (PRESERVED)"""
@@ -774,9 +776,11 @@ class CompleteTradingBot:
         self.sub_mgr = CompleteSubscriptionManager(Config.DB_PATH)
         self.admin_mgr = CompleteAdminManager(Config.DB_PATH)
         
-    async def initialize(self):
-        await self.signal_gen.initialize()
+    def initialize(self):
+        """SYNCHRONOUS initialization"""
+        self.signal_gen.initialize()
         logger.info("✅ Complete TradingBot initialized")
+        return True
     
     async def send_welcome(self, user, chat_id):
         """COMPLETE Welcome Message with ALL Options"""
@@ -1258,8 +1262,8 @@ class CompleteTelegramBotHandler:
         self.app = None
         self.bot_core = None
     
-    async def initialize(self):
-        """FIXED: Initialize COMPLETE Telegram bot"""
+    def initialize(self):
+        """FIXED: Initialize COMPLETE Telegram bot - SYNCHRONOUS"""
         try:
             if not self.token or self.token == "your_bot_token_here":
                 logger.error("❌ TELEGRAM_TOKEN not set!")
@@ -1269,8 +1273,8 @@ class CompleteTelegramBotHandler:
             self.app = Application.builder().token(self.token).build()
             self.bot_core = CompleteTradingBot(self.app)
             
-            # Initialize bot core
-            await self.bot_core.initialize()
+            # Initialize bot core - SYNCHRONOUS
+            self.bot_core.initialize()
             
             # COMPLETE HANDLER SET
             handlers = [
@@ -1560,12 +1564,12 @@ class CompleteTelegramBotHandler:
             logger.error(f"❌ Button error: {e}")
             await query.edit_message_text("❌ Action failed. Use /start to refresh")
 
-    async def start_polling(self):
-        """FIXED: Start bot polling - SIMPLIFIED"""
+    def start_polling(self):
+        """FIXED: Start bot polling - SYNCHRONOUS"""
         try:
             logger.info("🔄 Starting bot polling...")
-            # Use the built-in run_polling which handles everything correctly
-            await self.app.run_polling()
+            # Use run_polling which handles everything correctly
+            self.app.run_polling()
         except Exception as e:
             logger.error(f"❌ Polling failed: {e}")
             raise
@@ -1599,8 +1603,8 @@ def start_web_server():
     web_thread.start()
 
 # ==================== FIXED MAIN APPLICATION ====================
-async def main():
-    """FIXED: Main Application - SIMPLIFIED"""
+def main():
+    """FIXED: Main Application - SYNCHRONOUS"""
     logger.info("🚀 Starting LEKZY FX AI PRO - COMPLETE EDITION...")
     
     try:
@@ -1614,7 +1618,7 @@ async def main():
         
         # Initialize and start bot
         bot_handler = CompleteTelegramBotHandler()
-        success = await bot_handler.initialize()
+        success = bot_handler.initialize()
         
         if success:
             logger.info("🎯 LEKZY FX AI PRO - COMPLETE EDITION READY!")
@@ -1623,10 +1627,11 @@ async def main():
             logger.info("✅ Fixed Event Loop Issues")
             logger.info("✅ Fixed ULTRAFAST Signal Generation")
             logger.info("✅ Fixed Admin Login System")
+            logger.info("✅ Fixed Coroutine Warnings")
             logger.info("🚀 Starting complete bot polling...")
             
-            # Start polling - SIMPLIFIED
-            await bot_handler.start_polling()
+            # Start polling - SYNCHRONOUS
+            bot_handler.start_polling()
         else:
             logger.error("❌ Failed to start bot")
             
@@ -1634,5 +1639,5 @@ async def main():
         logger.error(f"❌ Application failed: {e}")
 
 if __name__ == "__main__":
-    # FIXED: Simplified main execution
-    asyncio.run(main())
+    # FIXED: Simple synchronous execution
+    main()
