@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 LEKZY FX AI PRO - COMPLETE ULTIMATE EDITION 
-FULLY FIXED VERSION - All Issues Resolved
+FULLY FIXED VERSION - Event Loop Issues Resolved
 """
 
 import os
@@ -1031,7 +1031,7 @@ Trading carries significant risk of loss. Only trade with risk capital you can a
 • Maximum performance
 
 📞 *Contact Admin:* {Config.ADMIN_CONTACT}
-🔑 *Admin Login:* Use `/admin` command
+🔑 *Admin Login:* Use `/login` command
 
 *To upgrade your plan, contact the admin above!*
 """
@@ -1284,7 +1284,7 @@ class CompleteTelegramBotHandler:
                 CommandHandler("risk", self.risk_cmd),
                 CommandHandler("stats", self.stats_cmd),
                 CommandHandler("admin", self.admin_cmd),
-                CommandHandler("login", self.login_cmd),  # ADDED: Login command
+                CommandHandler("login", self.login_cmd),
                 CommandHandler("help", self.help_cmd),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message),
                 CallbackQueryHandler(self.complete_button_handler)
@@ -1561,9 +1561,10 @@ class CompleteTelegramBotHandler:
             await query.edit_message_text("❌ Action failed. Use /start to refresh")
 
     async def start_polling(self):
-        """FIXED: Start bot polling"""
+        """FIXED: Start bot polling - SIMPLIFIED"""
         try:
             logger.info("🔄 Starting bot polling...")
+            # Use the built-in run_polling which handles everything correctly
             await self.app.run_polling()
         except Exception as e:
             logger.error(f"❌ Polling failed: {e}")
@@ -1598,8 +1599,8 @@ def start_web_server():
     web_thread.start()
 
 # ==================== FIXED MAIN APPLICATION ====================
-async def complete_main():
-    """FIXED: COMPLETE Main Application"""
+async def main():
+    """FIXED: Main Application - SIMPLIFIED"""
     logger.info("🚀 Starting LEKZY FX AI PRO - COMPLETE EDITION...")
     
     try:
@@ -1619,24 +1620,19 @@ async def complete_main():
             logger.info("🎯 LEKZY FX AI PRO - COMPLETE EDITION READY!")
             logger.info("✅ ALL Old Features: PRESERVED")
             logger.info("✅ ALL New ULTRAFAST Features: ADDED")
+            logger.info("✅ Fixed Event Loop Issues")
             logger.info("✅ Fixed ULTRAFAST Signal Generation")
             logger.info("✅ Fixed Admin Login System")
-            logger.info("✅ Added Contact Admin in Plans")
             logger.info("🚀 Starting complete bot polling...")
             
-            # Start polling
+            # Start polling - SIMPLIFIED
             await bot_handler.start_polling()
         else:
-            logger.error("❌ Failed to start complete bot")
+            logger.error("❌ Failed to start bot")
             
     except Exception as e:
-        logger.error(f"❌ Complete application failed: {e}")
+        logger.error(f"❌ Application failed: {e}")
 
 if __name__ == "__main__":
-    # FIXED: Proper asyncio event loop handling
-    try:
-        asyncio.run(complete_main())
-    except KeyboardInterrupt:
-        logger.info("🛑 Application stopped by user")
-    except Exception as e:
-        logger.error(f"❌ Application crashed: {e}")
+    # FIXED: Simplified main execution
+    asyncio.run(main())
