@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 LEKZY FX AI PRO - COMPLETE ULTIMATE EDITION 
-FIXED VERSION - Preserving ALL features
+FULLY FIXED VERSION - All Issues Resolved
 """
 
 import os
@@ -341,7 +341,7 @@ class WorldClassAIPredictor:
             logger.error(f"❌ AI Prediction failed: {e}")
             return "BUY", 0.82
 
-# ==================== COMPLETE SIGNAL GENERATOR ====================
+# ==================== FIXED SIGNAL GENERATOR ====================
 class CompleteSignalGenerator:
     def __init__(self):
         self.ai_predictor = WorldClassAIPredictor()
@@ -368,7 +368,7 @@ class CompleteSignalGenerator:
             return "CLOSED", 1.0
     
     async def generate_signal(self, symbol, timeframe="5M", signal_type="NORMAL", ultrafast_mode=None):
-        """COMPLETE Signal Generation - ALL types"""
+        """FIXED: COMPLETE Signal Generation - ALL types"""
         try:
             session_name, session_boost = self.get_current_session()
             
@@ -443,6 +443,19 @@ class CompleteSignalGenerator:
             entry_time = current_time + timedelta(seconds=pre_entry_delay)
             exit_time = entry_time + timedelta(seconds=trade_duration)
             
+            # FIXED: Get mode name for ultrafast signals
+            mode_name = ""
+            if ultrafast_mode:
+                mode_name = Config.ULTRAFAST_MODES[ultrafast_mode]["name"]
+            elif signal_type == "QUICK":
+                mode_name = "🚀 QUICK MODE"
+            elif signal_type == "SWING":
+                mode_name = "📈 SWING MODE"
+            elif signal_type == "POSITION":
+                mode_name = "💎 POSITION MODE"
+            else:
+                mode_name = "📊 REGULAR MODE"
+            
             signal_data = {
                 "symbol": symbol,
                 "direction": direction,
@@ -454,6 +467,7 @@ class CompleteSignalGenerator:
                 "timeframe": timeframe,
                 "signal_type": signal_type,
                 "ultrafast_mode": ultrafast_mode,
+                "mode_name": mode_name,
                 "session": session_name,
                 "session_boost": session_boost,
                 "pre_entry_delay": pre_entry_delay,
@@ -478,6 +492,12 @@ class CompleteSignalGenerator:
     
     def get_fallback_signal(self, symbol, timeframe, signal_type, ultrafast_mode):
         """Fallback signal (PRESERVED)"""
+        mode_name = ""
+        if ultrafast_mode:
+            mode_name = Config.ULTRAFAST_MODES.get(ultrafast_mode, {}).get("name", "FALLBACK")
+        else:
+            mode_name = "FALLBACK"
+            
         return {
             "symbol": symbol or "EUR/USD",
             "direction": "BUY",
@@ -489,6 +509,7 @@ class CompleteSignalGenerator:
             "timeframe": timeframe,
             "signal_type": signal_type,
             "ultrafast_mode": ultrafast_mode,
+            "mode_name": mode_name,
             "session": "FALLBACK",
             "session_boost": 1.0,
             "pre_entry_delay": 10,
@@ -651,14 +672,14 @@ class CompleteSubscriptionManager:
             logger.error(f"❌ Admin status update failed: {e}")
             return False
 
-# ==================== COMPLETE ADMIN MANAGER ====================
+# ==================== FIXED ADMIN MANAGER ====================
 class CompleteAdminManager:
     def __init__(self, db_path):
         self.db_path = db_path
         self.sub_mgr = CompleteSubscriptionManager(db_path)
     
     async def handle_admin_login(self, user_id, username, token):
-        """Handle admin login"""
+        """FIXED: Handle admin login"""
         try:
             if token == Config.ADMIN_TOKEN:
                 success = self.sub_mgr.set_admin_status(user_id, True)
@@ -672,11 +693,11 @@ class CompleteAdminManager:
                     conn.close()
                     
                     logger.info(f"✅ Admin login successful for user {user_id}")
-                    return True, "🎉 *ADMIN ACCESS GRANTED!*"
+                    return True, "🎉 *ADMIN ACCESS GRANTED!*\n\nYou now have full administrative privileges."
                 else:
                     return False, "❌ Failed to set admin status."
             else:
-                return False, "❌ *Invalid admin token!*"
+                return False, "❌ *Invalid admin token!*\n\nPlease check your token and try again."
                 
         except Exception as e:
             logger.error(f"❌ Admin login failed: {e}")
@@ -745,7 +766,7 @@ class CompleteAdminManager:
             logger.error(f"❌ Admin panel error: {e}")
             await bot.send_message(chat_id, "❌ Failed to load admin panel.")
 
-# ==================== COMPLETE TRADING BOT ====================
+# ==================== FIXED TRADING BOT ====================
 class CompleteTradingBot:
     def __init__(self, application):
         self.app = application
@@ -985,8 +1006,8 @@ Trading carries significant risk of loss. Only trade with risk capital you can a
         )
     
     async def show_plans(self, chat_id):
-        """Show subscription plans"""
-        message = """
+        """FIXED: Show subscription plans with contact admin"""
+        message = f"""
 💎 *SUBSCRIPTION PLANS*
 
 🎯 *TRIAL* - FREE
@@ -1008,10 +1029,16 @@ Trading carries significant risk of loss. Only trade with risk capital you can a
 • Unlimited regular signals
 • 200 ULTRAFAST signals/day
 • Maximum performance
+
+📞 *Contact Admin:* {Config.ADMIN_CONTACT}
+🔑 *Admin Login:* Use `/admin` command
+
+*To upgrade your plan, contact the admin above!*
 """
         keyboard = [
             [InlineKeyboardButton("⚡ TRY ULTRAFAST", callback_data="ultrafast_menu")],
             [InlineKeyboardButton("🎯 FREE SIGNAL", callback_data="normal_signal")],
+            [InlineKeyboardButton("🔑 ADMIN LOGIN", callback_data="admin_login_prompt")],
             [InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]
         ]
         
@@ -1058,7 +1085,7 @@ Trading carries significant risk of loss. Only trade with risk capital you can a
         )
 
     async def generate_signal(self, user_id, chat_id, signal_type="NORMAL", ultrafast_mode=None, timeframe="5M"):
-        """COMPLETE Signal Generation - ALL Types"""
+        """FIXED: COMPLETE Signal Generation - ALL Types"""
         try:
             logger.info(f"🔄 Generating {signal_type} signal for user {user_id}")
             
@@ -1072,6 +1099,10 @@ Trading carries significant risk of loss. Only trade with risk capital you can a
             symbol = random.choice(self.signal_gen.pairs)
             signal = await self.signal_gen.generate_signal(symbol, timeframe, signal_type, ultrafast_mode)
             
+            if not signal:
+                await self.app.bot.send_message(chat_id, "❌ Failed to generate signal. Please try again.")
+                return False
+            
             # SEND SIGNAL BASED ON TYPE
             if ultrafast_mode:
                 await self.send_ultrafast_signal(chat_id, signal)
@@ -1082,22 +1113,29 @@ Trading carries significant risk of loss. Only trade with risk capital you can a
             
             # INCREMENT COUNT
             is_ultrafast = ultrafast_mode is not None
-            self.sub_mgr.increment_signal_count(user_id, is_ultrafast)
+            success = self.sub_mgr.increment_signal_count(user_id, is_ultrafast)
+            
+            if not success:
+                logger.error(f"❌ Failed to increment signal count for user {user_id}")
             
             logger.info(f"✅ {signal_type} signal completed for user {user_id}")
             return True
             
         except Exception as e:
             logger.error(f"❌ {signal_type} signal failed: {e}")
-            await self.app.bot.send_message(chat_id, f"❌ {signal_type} signal generation failed. Please try again.")
+            await self.app.bot.send_message(
+                chat_id, 
+                f"❌ {signal_type} signal generation failed. Please try again.\n\nError: {str(e)}"
+            )
             return False
 
     async def send_ultrafast_signal(self, chat_id, signal):
-        """Send ULTRAFAST signal"""
-        direction_emoji = "🟢" if signal["direction"] == "BUY" else "🔴"
-        
-        # PRE-ENTRY
-        pre_msg = f"""
+        """FIXED: Send ULTRAFAST signal"""
+        try:
+            direction_emoji = "🟢" if signal["direction"] == "BUY" else "🔴"
+            
+            # PRE-ENTRY
+            pre_msg = f"""
 ⚡ *{signal['mode_name']} - {signal['timeframe']} SIGNAL* 🚀
 
 {signal['symbol']} | **{signal['direction']}** {direction_emoji}
@@ -1105,13 +1143,13 @@ Trading carries significant risk of loss. Only trade with risk capital you can a
 
 ⏰ *Entry in {signal['pre_entry_delay']}s...* ⚡
 """
-        await self.app.bot.send_message(chat_id, pre_msg, parse_mode='Markdown')
-        
-        # WAIT FOR ENTRY
-        await asyncio.sleep(signal['pre_entry_delay'])
-        
-        # ENTRY SIGNAL
-        entry_msg = f"""
+            sent_message = await self.app.bot.send_message(chat_id, pre_msg, parse_mode='Markdown')
+            
+            # WAIT FOR ENTRY
+            await asyncio.sleep(signal['pre_entry_delay'])
+            
+            # ENTRY SIGNAL
+            entry_msg = f"""
 🎯 *ULTRAFAST ENTRY SIGNAL* ✅
 
 ⚡ *{signal['mode_name']}*
@@ -1127,17 +1165,21 @@ Trading carries significant risk of loss. Only trade with risk capital you can a
 🚨 *SET STOP LOSS IMMEDIATELY!*
 ⚡ *Execute NOW!*
 """
-        keyboard = [
-            [InlineKeyboardButton("✅ TRADE EXECUTED", callback_data="trade_done")],
-            [InlineKeyboardButton("⚡ NEW ULTRAFAST", callback_data="ultrafast_menu")]
-        ]
-        
-        await self.app.bot.send_message(
-            chat_id,
-            entry_msg,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='Markdown'
-        )
+            keyboard = [
+                [InlineKeyboardButton("✅ TRADE EXECUTED", callback_data="trade_done")],
+                [InlineKeyboardButton("⚡ NEW ULTRAFAST", callback_data="ultrafast_menu")]
+            ]
+            
+            await self.app.bot.send_message(
+                chat_id,
+                entry_msg,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
+            
+        except Exception as e:
+            logger.error(f"❌ ULTRAFAST signal sending failed: {e}")
+            raise
 
     async def send_quick_signal(self, chat_id, signal):
         """Send QUICK signal"""
@@ -1223,11 +1265,11 @@ class CompleteTelegramBotHandler:
                 logger.error("❌ TELEGRAM_TOKEN not set!")
                 return False
             
-            # FIXED: Create application without unnecessary async calls
+            # Create application
             self.app = Application.builder().token(self.token).build()
             self.bot_core = CompleteTradingBot(self.app)
             
-            # Initialize bot core (non-async)
+            # Initialize bot core
             await self.bot_core.initialize()
             
             # COMPLETE HANDLER SET
@@ -1242,6 +1284,7 @@ class CompleteTelegramBotHandler:
                 CommandHandler("risk", self.risk_cmd),
                 CommandHandler("stats", self.stats_cmd),
                 CommandHandler("admin", self.admin_cmd),
+                CommandHandler("login", self.login_cmd),  # ADDED: Login command
                 CommandHandler("help", self.help_cmd),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message),
                 CallbackQueryHandler(self.complete_button_handler)
@@ -1335,7 +1378,30 @@ class CompleteTelegramBotHandler:
             await update.message.reply_text(
                 "🔐 *Admin Access Required*\n\n"
                 "To access admin features, please login with your admin token.\n\n"
-                "Send your admin token now or use /start for regular features.",
+                "Use `/login YOUR_ADMIN_TOKEN` or send your admin token as a message.",
+                parse_mode='Markdown'
+            )
+    
+    async def login_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """FIXED: Handle login command"""
+        user = update.effective_user
+        
+        if context.args:
+            token = context.args[0]
+            success, message = await self.bot_core.admin_mgr.handle_admin_login(
+                user.id, user.username or user.first_name, token
+            )
+            await update.message.reply_text(message, parse_mode='Markdown')
+            
+            if success:
+                # Show admin panel
+                await self.bot_core.admin_mgr.show_admin_panel(update.effective_chat.id, self.app.bot)
+        else:
+            await update.message.reply_text(
+                "🔐 *Admin Login*\n\n"
+                "Please provide your admin token:\n"
+                "`/login YOUR_ADMIN_TOKEN`\n\n"
+                "Or send your token as a message.",
                 parse_mode='Markdown'
             )
     
@@ -1366,7 +1432,7 @@ class CompleteTelegramBotHandler:
             await self.bot_core.admin_mgr.show_admin_panel(update.effective_chat.id, self.app.bot)
 
     async def help_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        help_text = """
+        help_text = f"""
 🤖 *LEKZY FX AI PRO - COMPLETE HELP* 🚀
 
 💎 *COMPLETE COMMANDS:*
@@ -1380,6 +1446,7 @@ class CompleteTelegramBotHandler:
 • /risk - Risk management
 • /stats - Your statistics
 • /admin - Admin control panel
+• /login [TOKEN] - Admin login
 • /help - This help message
 
 ⚡ *ULTRAFAST MODES:*
@@ -1393,6 +1460,8 @@ class CompleteTelegramBotHandler:
 • REGULAR - Standard analysis
 • SWING - Medium-term positions
 • POSITION - Long-term investments
+
+📞 *Contact Admin:* {Config.ADMIN_CONTACT}
 
 🚀 *Experience the future of trading!*
 """
@@ -1454,6 +1523,13 @@ class CompleteTelegramBotHandler:
                     await self.bot_core.admin_mgr.show_admin_panel(query.message.chat_id, self.app.bot)
                 else:
                     await query.edit_message_text("🔐 *Admin Access Required*")
+            elif data == "admin_login_prompt":
+                await query.edit_message_text(
+                    "🔐 *Admin Login Required*\n\n"
+                    "Use `/login YOUR_ADMIN_TOKEN` to access admin features.\n\n"
+                    "Or send your admin token as a message.",
+                    parse_mode='Markdown'
+                )
             elif data.startswith("admin_"):
                 if self.bot_core.admin_mgr.is_user_admin(user.id):
                     admin_action = data.replace("admin_", "")
@@ -1488,23 +1564,10 @@ class CompleteTelegramBotHandler:
         """FIXED: Start bot polling"""
         try:
             logger.info("🔄 Starting bot polling...")
-            await self.app.initialize()  # FIXED: Proper initialization
-            await self.app.start()
-            await self.app.updater.start_polling()
-            logger.info("✅ Bot polling started successfully")
-            
-            # Keep the application running
-            await asyncio.Event().wait()
-            
+            await self.app.run_polling()
         except Exception as e:
             logger.error(f"❌ Polling failed: {e}")
             raise
-
-    async def stop(self):
-        """Stop the bot gracefully"""
-        if self.app:
-            await self.app.stop()
-            await self.app.shutdown()
 
 # ==================== WEB SERVER ====================
 app = Flask(__name__)
@@ -1556,20 +1619,18 @@ async def complete_main():
             logger.info("🎯 LEKZY FX AI PRO - COMPLETE EDITION READY!")
             logger.info("✅ ALL Old Features: PRESERVED")
             logger.info("✅ ALL New ULTRAFAST Features: ADDED")
-            logger.info("✅ Fixed Telegram Bot Initialization")
+            logger.info("✅ Fixed ULTRAFAST Signal Generation")
+            logger.info("✅ Fixed Admin Login System")
+            logger.info("✅ Added Contact Admin in Plans")
             logger.info("🚀 Starting complete bot polling...")
             
-            # Start polling - FIXED: Proper async handling
+            # Start polling
             await bot_handler.start_polling()
         else:
             logger.error("❌ Failed to start complete bot")
             
     except Exception as e:
         logger.error(f"❌ Complete application failed: {e}")
-    finally:
-        # Cleanup
-        if 'bot_handler' in locals():
-            await bot_handler.stop()
 
 if __name__ == "__main__":
     # FIXED: Proper asyncio event loop handling
