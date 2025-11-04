@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 LEKZY FX AI PRO - COMPLETE ULTIMATE EDITION 
-Preserving ALL old features + Adding ALL new ULTRAFAST features
+FIXED VERSION - Preserving ALL features
 """
 
 import os
@@ -25,7 +25,7 @@ from flask import Flask
 from threading import Thread
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split  # FIXED IMPORT
+from sklearn.model_selection import train_test_split
 import ta
 
 # ==================== COMPLETE CONFIGURATION ====================
@@ -1209,7 +1209,7 @@ Trading carries significant risk of loss. Only trade with risk capital you can a
             parse_mode='Markdown'
         )
 
-# ==================== COMPLETE TELEGRAM BOT HANDLER ====================
+# ==================== FIXED TELEGRAM BOT HANDLER ====================
 class CompleteTelegramBotHandler:
     def __init__(self):
         self.token = Config.TELEGRAM_TOKEN
@@ -1217,14 +1217,17 @@ class CompleteTelegramBotHandler:
         self.bot_core = None
     
     async def initialize(self):
-        """Initialize COMPLETE Telegram bot"""
+        """FIXED: Initialize COMPLETE Telegram bot"""
         try:
             if not self.token or self.token == "your_bot_token_here":
                 logger.error("❌ TELEGRAM_TOKEN not set!")
                 return False
             
+            # FIXED: Create application without unnecessary async calls
             self.app = Application.builder().token(self.token).build()
             self.bot_core = CompleteTradingBot(self.app)
+            
+            # Initialize bot core (non-async)
             await self.bot_core.initialize()
             
             # COMPLETE HANDLER SET
@@ -1247,7 +1250,7 @@ class CompleteTelegramBotHandler:
             for handler in handlers:
                 self.app.add_handler(handler)
             
-            logger.info("✅ Complete Telegram Bot initialized")
+            logger.info("✅ Complete Telegram Bot initialized successfully")
             return True
             
         except Exception as e:
@@ -1482,12 +1485,26 @@ class CompleteTelegramBotHandler:
             await query.edit_message_text("❌ Action failed. Use /start to refresh")
 
     async def start_polling(self):
-        """Start bot polling"""
+        """FIXED: Start bot polling"""
         try:
-            await self.app.run_polling()
-            logger.info("✅ Complete Bot polling started")
+            logger.info("🔄 Starting bot polling...")
+            await self.app.initialize()  # FIXED: Proper initialization
+            await self.app.start()
+            await self.app.updater.start_polling()
+            logger.info("✅ Bot polling started successfully")
+            
+            # Keep the application running
+            await asyncio.Event().wait()
+            
         except Exception as e:
             logger.error(f"❌ Polling failed: {e}")
+            raise
+
+    async def stop(self):
+        """Stop the bot gracefully"""
+        if self.app:
+            await self.app.stop()
+            await self.app.shutdown()
 
 # ==================== WEB SERVER ====================
 app = Flask(__name__)
@@ -1517,15 +1534,21 @@ def start_web_server():
     web_thread.daemon = True
     web_thread.start()
 
-# ==================== COMPLETE MAIN APPLICATION ====================
+# ==================== FIXED MAIN APPLICATION ====================
 async def complete_main():
-    """COMPLETE Main Application"""
+    """FIXED: COMPLETE Main Application"""
     logger.info("🚀 Starting LEKZY FX AI PRO - COMPLETE EDITION...")
     
     try:
+        # Initialize database
         initialize_database()
-        start_web_server()
+        logger.info("✅ Database initialized")
         
+        # Start web server
+        start_web_server()
+        logger.info("✅ Web server started")
+        
+        # Initialize and start bot
         bot_handler = CompleteTelegramBotHandler()
         success = await bot_handler.initialize()
         
@@ -1533,15 +1556,26 @@ async def complete_main():
             logger.info("🎯 LEKZY FX AI PRO - COMPLETE EDITION READY!")
             logger.info("✅ ALL Old Features: PRESERVED")
             logger.info("✅ ALL New ULTRAFAST Features: ADDED")
-            logger.info("✅ Fixed Import Error: sklearn.model_selection")
+            logger.info("✅ Fixed Telegram Bot Initialization")
             logger.info("🚀 Starting complete bot polling...")
             
+            # Start polling - FIXED: Proper async handling
             await bot_handler.start_polling()
         else:
             logger.error("❌ Failed to start complete bot")
             
     except Exception as e:
         logger.error(f"❌ Complete application failed: {e}")
+    finally:
+        # Cleanup
+        if 'bot_handler' in locals():
+            await bot_handler.stop()
 
 if __name__ == "__main__":
-    asyncio.run(complete_main())
+    # FIXED: Proper asyncio event loop handling
+    try:
+        asyncio.run(complete_main())
+    except KeyboardInterrupt:
+        logger.info("🛑 Application stopped by user")
+    except Exception as e:
+        logger.error(f"❌ Application crashed: {e}")
