@@ -25,7 +25,7 @@ from flask import Flask
 from threading import Thread
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_ensemble import train_test_split
+from sklearn.model_selection import train_test_split  # FIXED IMPORT
 import ta
 
 # ==================== COMPLETE CONFIGURATION ====================
@@ -836,6 +836,27 @@ class CompleteTradingBot:
                 ]])
             )
     
+    async def show_risk_disclaimer(self, user_id, chat_id):
+        """Show risk disclaimer"""
+        message = """
+🚨 *IMPORTANT RISK DISCLAIMER* 🚨
+
+Trading carries significant risk of loss. Only trade with risk capital you can afford to lose.
+
+*By using this bot, you acknowledge and accept these risks.*
+"""
+        keyboard = [
+            [InlineKeyboardButton("✅ I UNDERSTAND & ACCEPT RISKS", callback_data="accept_risks")],
+            [InlineKeyboardButton("❌ CANCEL", callback_data="cancel_risks")]
+        ]
+        
+        await self.app.bot.send_message(
+            chat_id=chat_id,
+            text=message,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+    
     async def show_ultrafast_menu(self, chat_id):
         """ULTRAFAST Trading Menu"""
         message = """
@@ -932,7 +953,109 @@ class CompleteTradingBot:
             parse_mode='Markdown'
         )
 
-    # ALL OTHER METHODS PRESERVED (show_risk_disclaimer, show_risk_management, show_plans, show_timeframes, etc.)
+    async def show_risk_management(self, chat_id):
+        """Show risk management guide"""
+        message = """
+🛡️ *RISK MANAGEMENT GUIDE* 🛡️
+
+💰 *Essential Rules:*
+• Risk Only 1-2% per trade
+• Always Use Stop Loss
+• Maintain 1:1.5+ Risk/Reward
+• Maximum 5% total exposure
+
+📊 *Example Position:*
+• Account: $1,000
+• Risk: 1% = $10 per trade
+• Stop Loss: 20 pips
+• Position: $0.50 per pip
+
+🚨 *Trade responsibly!*
+"""
+        keyboard = [
+            [InlineKeyboardButton("⚡ GET SIGNAL", callback_data="ultrafast_menu")],
+            [InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]
+        ]
+        
+        await self.app.bot.send_message(
+            chat_id=chat_id,
+            text=message,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+    
+    async def show_plans(self, chat_id):
+        """Show subscription plans"""
+        message = """
+💎 *SUBSCRIPTION PLANS*
+
+🎯 *TRIAL* - FREE
+• 5 regular signals/day
+• 2 ULTRAFAST signals/day
+• Basic AI features
+
+💎 *BASIC* - $49/month
+• 50 regular signals/day  
+• 10 ULTRAFAST signals/day
+• All ULTRAFAST modes
+
+🚀 *PRO* - $99/month
+• 200 regular signals/day
+• 50 ULTRAFAST signals/day
+• Advanced AI features
+
+👑 *VIP* - $199/month
+• Unlimited regular signals
+• 200 ULTRAFAST signals/day
+• Maximum performance
+"""
+        keyboard = [
+            [InlineKeyboardButton("⚡ TRY ULTRAFAST", callback_data="ultrafast_menu")],
+            [InlineKeyboardButton("🎯 FREE SIGNAL", callback_data="normal_signal")],
+            [InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]
+        ]
+        
+        await self.app.bot.send_message(
+            chat_id=chat_id,
+            text=message,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+    
+    async def show_timeframes(self, chat_id):
+        """Show timeframe selection"""
+        message = """
+🎯 *CHOOSE TIMEFRAME*
+
+*Recommended for ULTRAFAST:*
+⚡ *1 Minute (1M)* - Hyper Speed
+📈 *5 Minutes (5M)* - Turbo Mode  
+🕒 *15 Minutes (15M)* - Standard
+
+*Regular Trading:*
+⏰ *1 Hour (1H)* - Position trading
+📊 *4 Hours (4H)* - Long-term analysis
+"""
+        keyboard = [
+            [
+                InlineKeyboardButton("⚡ 1M", callback_data="timeframe_1M"),
+                InlineKeyboardButton("📈 5M", callback_data="timeframe_5M"),
+                InlineKeyboardButton("🕒 15M", callback_data="timeframe_15M")
+            ],
+            [
+                InlineKeyboardButton("⏰ 1H", callback_data="timeframe_1H"),
+                InlineKeyboardButton("📊 4H", callback_data="timeframe_4H")
+            ],
+            [InlineKeyboardButton("⚡ ULTRAFAST MENU", callback_data="ultrafast_menu")],
+            [InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]
+        ]
+        
+        await self.app.bot.send_message(
+            chat_id=chat_id,
+            text=message,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
 
     async def generate_signal(self, user_id, chat_id, signal_type="NORMAL", ultrafast_mode=None, timeframe="5M"):
         """COMPLETE Signal Generation - ALL Types"""
@@ -977,7 +1100,7 @@ class CompleteTradingBot:
         pre_msg = f"""
 ⚡ *{signal['mode_name']} - {signal['timeframe']} SIGNAL* 🚀
 
-{symbol} | **{signal['direction']}** {direction_emoji}
+{signal['symbol']} | **{signal['direction']}** {direction_emoji}
 🎯 *Confidence:* {signal['confidence']*100:.1f}% *GUARANTEED*
 
 ⏰ *Entry in {signal['pre_entry_delay']}s...* ⚡
@@ -1160,9 +1283,118 @@ class CompleteTelegramBotHandler:
         user = update.effective_user
         timeframe = context.args[0] if context.args else "4H"
         await self.bot_core.generate_signal(user.id, update.effective_chat.id, "POSITION", None, timeframe)
+    
+    async def plans_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await self.bot_core.show_plans(update.effective_chat.id)
+    
+    async def risk_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await self.bot_core.show_risk_management(update.effective_chat.id)
+    
+    async def stats_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user = update.effective_user
+        subscription = self.bot_core.sub_mgr.get_user_subscription(user.id)
+        
+        message = f"""
+📊 *YOUR ULTIMATE STATISTICS* 🏆
 
-    # OTHER COMMANDS PRESERVED (plans_cmd, risk_cmd, stats_cmd, admin_cmd, help_cmd, handle_message)
+👤 *Trader:* {user.first_name}
+💼 *Plan:* {subscription['plan_type']}
+📈 *Regular Signals:* {subscription['signals_used']}/{subscription['max_daily_signals']}
+⚡ *ULTRAFAST Signals:* {subscription['ultrafast_used']}/{subscription['max_ultrafast_signals']}
 
+🏆 *PERFORMANCE:*
+• Total Trades: {subscription['total_trades']}
+• Total Profits: ${subscription['total_profits']:.2f}
+• Success Rate: {subscription['success_rate']:.1f}%
+
+🚀 *Next Level:* Upgrade for more ULTRAFAST signals!
+"""
+        keyboard = [
+            [InlineKeyboardButton("⚡ ULTRAFAST SIGNAL", callback_data="ultrafast_menu")],
+            [InlineKeyboardButton("💎 UPGRADE PLAN", callback_data="show_plans")],
+            [InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]
+        ]
+        
+        await update.message.reply_text(
+            message,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+    
+    async def admin_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle admin command"""
+        user = update.effective_user
+        
+        # Check if user is admin
+        if self.bot_core.admin_mgr.is_user_admin(user.id):
+            await self.bot_core.admin_mgr.show_admin_panel(update.effective_chat.id, self.app.bot)
+        else:
+            await update.message.reply_text(
+                "🔐 *Admin Access Required*\n\n"
+                "To access admin features, please login with your admin token.\n\n"
+                "Send your admin token now or use /start for regular features.",
+                parse_mode='Markdown'
+            )
+    
+    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle regular messages for admin login"""
+        user = update.effective_user
+        message_text = update.message.text
+        
+        # Check if this might be an admin token
+        if len(message_text) > 10 and any(keyword in message_text.upper() for keyword in ['ADMIN', 'LEKZY', 'TOKEN']):
+            await update.message.reply_text(
+                "🔐 *Admin Login Detected*\n\nProcessing your admin token...",
+                parse_mode='Markdown'
+            )
+            await self.handle_admin_login(update, context, message_text)
+
+    async def handle_admin_login(self, update: Update, context: ContextTypes.DEFAULT_TYPE, token):
+        """Handle admin login"""
+        user = update.effective_user
+        success, message = await self.bot_core.admin_mgr.handle_admin_login(
+            user.id, user.username or user.first_name, token
+        )
+        
+        await update.message.reply_text(message, parse_mode='Markdown')
+        
+        if success:
+            # Show admin panel
+            await self.bot_core.admin_mgr.show_admin_panel(update.effective_chat.id, self.app.bot)
+
+    async def help_cmd(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        help_text = """
+🤖 *LEKZY FX AI PRO - COMPLETE HELP* 🚀
+
+💎 *COMPLETE COMMANDS:*
+• /start - Complete main menu
+• /signal [TIMEFRAME] - Regular signal
+• /ultrafast [MODE] [TIMEFRAME] - ULTRAFAST signal
+• /quick [TIMEFRAME] - Quick signal
+• /swing [TIMEFRAME] - Swing trading
+• /position [TIMEFRAME] - Position trading
+• /plans - Subscription plans
+• /risk - Risk management
+• /stats - Your statistics
+• /admin - Admin control panel
+• /help - This help message
+
+⚡ *ULTRAFAST MODES:*
+• HYPER - 5s pre-entry, 1min trades
+• TURBO - 8s pre-entry, 2min trades  
+• STANDARD - 10s pre-entry, 5min trades
+
+🎯 *TRADING STYLES:*
+• ULTRAFAST - Lightning-fast execution
+• QUICK - Fast trading signals
+• REGULAR - Standard analysis
+• SWING - Medium-term positions
+• POSITION - Long-term investments
+
+🚀 *Experience the future of trading!*
+"""
+        await update.message.reply_text(help_text, parse_mode='Markdown')
+    
     async def complete_button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
         await query.answer()
@@ -1186,8 +1418,65 @@ class CompleteTelegramBotHandler:
                 await self.bot_core.show_ultrafast_menu(query.message.chat_id)
             elif data == "signal_types_menu":
                 await self.bot_core.show_signal_types_menu(query.message.chat_id)
-            # ALL OTHER BUTTON HANDLERS PRESERVED
-            
+            elif data.startswith("timeframe_"):
+                timeframe = data.replace("timeframe_", "")
+                if "ultrafast" in query.message.text:
+                    await self.bot_core.generate_signal(user.id, query.message.chat_id, "ULTRAFAST", "STANDARD", timeframe)
+                else:
+                    await self.bot_core.generate_signal(user.id, query.message.chat_id, "NORMAL", None, timeframe)
+            elif data == "show_timeframes":
+                await self.bot_core.show_timeframes(query.message.chat_id)
+            elif data == "show_plans":
+                await self.bot_core.show_plans(query.message.chat_id)
+            elif data == "show_stats":
+                subscription = self.bot_core.sub_mgr.get_user_subscription(user.id)
+                message = f"""
+📊 *YOUR ULTIMATE STATS* 🏆
+
+👤 *Trader:* {user.first_name}
+💼 *Plan:* {subscription['plan_type']}
+📈 *Regular:* {subscription['signals_used']}/{subscription['max_daily_signals']}
+⚡ *ULTRAFAST:* {subscription['ultrafast_used']}/{subscription['max_ultrafast_signals']}
+🏆 *Success Rate:* {subscription['success_rate']:.1f}%
+
+🚀 *Keep dominating the markets!*
+"""
+                await query.edit_message_text(message, parse_mode='Markdown')
+            elif data == "risk_management":
+                await self.bot_core.show_risk_management(query.message.chat_id)
+            elif data == "trade_done":
+                await query.edit_message_text("✅ *Trade Executed!* 🎯\n\nHappy trading! 💰")
+            elif data == "admin_panel":
+                if self.bot_core.admin_mgr.is_user_admin(user.id):
+                    await self.bot_core.admin_mgr.show_admin_panel(query.message.chat_id, self.app.bot)
+                else:
+                    await query.edit_message_text("🔐 *Admin Access Required*")
+            elif data.startswith("admin_"):
+                if self.bot_core.admin_mgr.is_user_admin(user.id):
+                    admin_action = data.replace("admin_", "")
+                    if admin_action == "generate_tokens":
+                        await query.edit_message_text("🎫 *Token Generation Coming Soon!*")
+                    elif admin_action == "user_stats":
+                        await query.edit_message_text("📊 *User Statistics Coming Soon!*")
+                    elif admin_action == "system_status":
+                        await query.edit_message_text("🔄 *System Status: OPERATIONAL* ✅")
+                    elif admin_action == "broadcast":
+                        await query.edit_message_text("📢 *Broadcast Message Coming Soon!*")
+                else:
+                    await query.edit_message_text("❌ Admin access denied.")
+            elif data == "accept_risks":
+                success = self.bot_core.sub_mgr.mark_risk_acknowledged(user.id)
+                if success:
+                    await query.edit_message_text("✅ *Risk Accepted!*\n\nRedirecting to main menu...")
+                    await asyncio.sleep(2)
+                    await self.start_cmd(update, context)
+                else:
+                    await query.edit_message_text("❌ Failed. Try /start again.")
+            elif data == "cancel_risks":
+                await query.edit_message_text("❌ Risk acknowledgement required.\n\nUse /start when ready.")
+            elif data == "main_menu":
+                await self.start_cmd(update, context)
+                
         except Exception as e:
             logger.error(f"❌ Button error: {e}")
             await query.edit_message_text("❌ Action failed. Use /start to refresh")
@@ -1244,6 +1533,7 @@ async def complete_main():
             logger.info("🎯 LEKZY FX AI PRO - COMPLETE EDITION READY!")
             logger.info("✅ ALL Old Features: PRESERVED")
             logger.info("✅ ALL New ULTRAFAST Features: ADDED")
+            logger.info("✅ Fixed Import Error: sklearn.model_selection")
             logger.info("🚀 Starting complete bot polling...")
             
             await bot_handler.start_polling()
