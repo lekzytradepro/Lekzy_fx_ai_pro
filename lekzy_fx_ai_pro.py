@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 LEKZY FX AI PRO - ULTIMATE COMPLETE EDITION 
-ALL FEATURES PRESERVED + QUANTUM UPGRADES
+ALL FEATURES PRESERVED + QUANTUM UPGRADES - NO TA-LIB DEPENDENCY
 """
 
 import os
@@ -18,7 +18,6 @@ import requests
 import pandas as pd
 import numpy as np
 import aiohttp
-import talib
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
@@ -27,7 +26,7 @@ from threading import Thread
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
-import ta
+import ta  # We already have this installed
 
 # ==================== COMPLETE CONFIGURATION ====================
 class Config:
@@ -114,6 +113,8 @@ def initialize_database():
                 signals_used INTEGER DEFAULT 0,
                 max_ultrafast_signals INTEGER DEFAULT 2,
                 ultrafast_used INTEGER DEFAULT 0,
+                max_quantum_signals INTEGER DEFAULT 1,
+                quantum_used INTEGER DEFAULT 0,
                 joined_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 risk_acknowledged BOOLEAN DEFAULT FALSE,
                 total_profits REAL DEFAULT 0,
@@ -139,6 +140,7 @@ def initialize_database():
                 signal_type TEXT,
                 timeframe TEXT,
                 trading_mode TEXT,
+                quantum_mode TEXT,
                 session TEXT,
                 result TEXT,
                 pnl REAL,
@@ -288,6 +290,90 @@ class RealDataFetcher:
     async def close(self):
         await self.session.close()
 
+# ==================== ADVANCED TECHNICAL ANALYSIS (NO TA-LIB) ====================
+class AdvancedTechnicalAnalysis:
+    """Advanced technical analysis using only ta library and custom calculations"""
+    
+    @staticmethod
+    def calculate_rsi(prices, period=14):
+        """Calculate RSI without TA-Lib"""
+        if len(prices) < period:
+            return 50.0  # Neutral RSI
+            
+        deltas = np.diff(prices)
+        gains = np.where(deltas > 0, deltas, 0)
+        losses = np.where(deltas < 0, -deltas, 0)
+        
+        avg_gains = np.mean(gains[-period:])
+        avg_losses = np.mean(losses[-period:])
+        
+        if avg_losses == 0:
+            return 100.0 if avg_gains > 0 else 50.0
+            
+        rs = avg_gains / avg_losses
+        rsi = 100 - (100 / (1 + rs))
+        
+        return rsi
+    
+    @staticmethod
+    def calculate_macd(prices, fast=12, slow=26, signal=9):
+        """Calculate MACD without TA-Lib"""
+        if len(prices) < slow:
+            return 0, 0, 0
+            
+        # Calculate EMAs
+        def ema(data, period):
+            if len(data) < period:
+                return None
+            weights = np.exp(np.linspace(-1., 0., period))
+            weights /= weights.sum()
+            return np.convolve(data, weights, mode='valid')[-1]
+        
+        ema_fast = ema(prices, fast)
+        ema_slow = ema(prices, slow)
+        
+        if ema_fast is None or ema_slow is None:
+            return 0, 0, 0
+            
+        macd_line = ema_fast - ema_slow
+        macd_signal = ema(prices[-signal:], signal) if len(prices) >= signal else macd_line
+        macd_histogram = macd_line - macd_signal
+        
+        return macd_line, macd_signal, macd_histogram
+    
+    @staticmethod
+    def calculate_bollinger_bands(prices, period=20, std_dev=2):
+        """Calculate Bollinger Bands without TA-Lib"""
+        if len(prices) < period:
+            middle = np.mean(prices) if prices else 0
+            return middle, middle, middle
+            
+        middle_band = np.mean(prices[-period:])
+        std = np.std(prices[-period:])
+        
+        upper_band = middle_band + (std * std_dev)
+        lower_band = middle_band - (std * std_dev)
+        
+        return upper_band, middle_band, lower_band
+    
+    @staticmethod
+    def calculate_stochastic(highs, lows, closes, k_period=14, d_period=3):
+        """Calculate Stochastic Oscillator without TA-Lib"""
+        if len(closes) < k_period:
+            return 50, 50
+            
+        current_close = closes[-1]
+        lowest_low = min(lows[-k_period:])
+        highest_high = max(highs[-k_period:])
+        
+        if highest_high == lowest_low:
+            return 50, 50
+            
+        k = ((current_close - lowest_low) / (highest_high - lowest_low)) * 100
+        d = np.mean(closes[-d_period:]) if len(closes) >= d_period else k
+        
+        return k, d
+
 # ==================== WORLD-CLASS AI SYSTEMS (PRESERVED + ENHANCED) ====================
 class WorldClassAIPredictor:
     def __init__(self):
@@ -295,6 +381,7 @@ class WorldClassAIPredictor:
         self.quantum_states = {}
         self.neural_consensus = {}
         self.data_fetcher = RealDataFetcher()
+        self.tech_analysis = AdvancedTechnicalAnalysis()
         
     def initialize(self):
         """Initialize ALL AI systems - SYNCHRONOUS VERSION"""
@@ -341,32 +428,15 @@ class WorldClassAIPredictor:
                 prices = [float(item['close']) for item in market_data['twelve_data'][:14]]
                 
                 if len(prices) >= 14:
-                    gains = []
-                    losses = []
+                    # Use our custom RSI calculation
+                    rsi = self.tech_analysis.calculate_rsi(prices)
                     
-                    for i in range(1, len(prices)):
-                        change = prices[i] - prices[i-1]
-                        if change > 0:
-                            gains.append(change)
-                        else:
-                            losses.append(abs(change))
-                    
-                    if len(gains) > 0 and len(losses) > 0:
-                        avg_gain = sum(gains) / len(gains)
-                        avg_loss = sum(losses) / len(losses)
-                        
-                        if avg_loss == 0:
-                            rsi = 100
-                        else:
-                            rs = avg_gain / avg_loss
-                            rsi = 100 - (100 / (1 + rs))
-                        
-                        if rsi < 30:
-                            return 0.8
-                        elif rsi > 70:
-                            return 0.2
-                        else:
-                            return 0.5
+                    if rsi < 30:
+                        return 0.8  # Oversold - bullish
+                    elif rsi > 70:
+                        return 0.2  # Overbought - bearish
+                    else:
+                        return 0.5  # Neutral
             
             return self.quantum_rsi_analysis(symbol)
             
@@ -398,36 +468,19 @@ class WorldClassAIPredictor:
                 prices = [float(item['close']) for item in market_data['twelve_data'][:26]]
                 
                 if len(prices) >= 26:
-                    ema12 = self.calculate_ema(prices, 12)
-                    ema26 = self.calculate_ema(prices, 26)
+                    # Use our custom MACD calculation
+                    macd_line, macd_signal, macd_hist = self.tech_analysis.calculate_macd(prices)
                     
-                    if ema12 and ema26:
-                        macd_line = ema12[-1] - ema26[-1]
-                        
-                        if macd_line > 0:
-                            return 0.7
-                        else:
-                            return 0.3
+                    if macd_line > macd_signal:
+                        return 0.7  # Bullish
+                    else:
+                        return 0.3  # Bearish
             
             return self.neural_macd_consensus(symbol)
             
         except Exception as e:
             logger.error(f"❌ Real MACD analysis failed: {e}")
             return self.neural_macd_consensus(symbol)
-    
-    def calculate_ema(self, prices, period):
-        """Calculate Exponential Moving Average"""
-        if len(prices) < period:
-            return None
-            
-        ema = [prices[0]]
-        multiplier = 2 / (period + 1)
-        
-        for price in prices[1:]:
-            ema_value = (price - ema[-1]) * multiplier + ema[-1]
-            ema.append(ema_value)
-            
-        return ema
     
     def neural_macd_consensus(self, symbol):
         """Fallback MACD Analysis"""
@@ -523,6 +576,7 @@ class WorldClassAIPredictor:
 class QuantumAIPredictor:
     def __init__(self):
         self.data_fetcher = RealDataFetcher()
+        self.tech_analysis = AdvancedTechnicalAnalysis()
         
     async def quantum_analysis(self, symbol, timeframe="5min"):
         """Quantum-level market analysis"""
@@ -559,28 +613,53 @@ class QuantumAIPredictor:
             if len(df_data) < 20:
                 return 0.5
             
-            df = pd.DataFrame(df_data)
-            df['close'] = pd.to_numeric(df['close'])
-            df['high'] = pd.to_numeric(df['high'])
-            df['low'] = pd.to_numeric(df['low'])
+            # Extract price data
+            closes = [float(item['close']) for item in df_data]
+            highs = [float(item['high']) for item in df_data] if 'high' in df_data[0] else closes
+            lows = [float(item['low']) for item in df_data] if 'low' in df_data[0] else closes
             
             # Calculate multiple indicators
-            closes = df['close'].values
+            rsi = self.tech_analysis.calculate_rsi(closes)
+            macd_line, macd_signal, _ = self.tech_analysis.calculate_macd(closes)
+            bb_upper, bb_middle, bb_lower = self.tech_analysis.calculate_bollinger_bands(closes)
+            stoch_k, stoch_d = self.tech_analysis.calculate_stochastic(highs, lows, closes)
             
-            # Simple trend analysis
-            if len(closes) >= 10:
-                sma_5 = np.mean(closes[-5:])
-                sma_10 = np.mean(closes[-10:])
-                current_price = closes[-1]
-                
-                if current_price > sma_5 > sma_10:
-                    return 0.8  # Strong uptrend
-                elif current_price < sma_5 < sma_10:
-                    return 0.2  # Strong downtrend
-                else:
-                    return 0.5  # Sideways
+            # Multi-indicator consensus
+            bullish_signals = 0
+            total_signals = 0
             
-            return 0.5
+            # RSI signal
+            if rsi < 30:
+                bullish_signals += 1
+            elif rsi > 70:
+                bullish_signals -= 1
+            total_signals += 1
+            
+            # MACD signal
+            if macd_line > macd_signal:
+                bullish_signals += 1
+            else:
+                bullish_signals -= 1
+            total_signals += 1
+            
+            # Bollinger Bands signal
+            current_price = closes[-1]
+            if current_price <= bb_lower:
+                bullish_signals += 1  # Oversold - bullish
+            elif current_price >= bb_upper:
+                bullish_signals -= 1  # Overbought - bearish
+            total_signals += 1
+            
+            # Stochastic signal
+            if stoch_k < 20 and stoch_d < 20:
+                bullish_signals += 1  # Oversold - bullish
+            elif stoch_k > 80 and stoch_d > 80:
+                bullish_signals -= 1  # Overbought - bearish
+            total_signals += 1
+            
+            # Convert to score (0 to 1)
+            technical_score = (bullish_signals / total_signals + 1) / 2
+            return max(0.1, min(0.9, technical_score))
             
         except Exception as e:
             logger.error(f"❌ Technical quantum analysis failed: {e}")
@@ -866,14 +945,15 @@ class CompleteSubscriptionManager:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.execute("""
                 SELECT plan_type, max_daily_signals, signals_used, max_ultrafast_signals, ultrafast_used, 
-                       risk_acknowledged, total_profits, total_trades, success_rate, is_admin, subscription_end 
+                       max_quantum_signals, quantum_used, risk_acknowledged, total_profits, total_trades, 
+                       success_rate, is_admin, subscription_end 
                 FROM users WHERE user_id = ?
             """, (user_id,))
             result = cursor.fetchone()
             
             if result:
                 (plan_type, max_signals, signals_used, max_ultrafast, ultrafast_used, 
-                 risk_ack, profits, trades, success_rate, is_admin, sub_end) = result
+                 max_quantum, quantum_used, risk_ack, profits, trades, success_rate, is_admin, sub_end) = result
                 
                 return {
                     "plan_type": plan_type,
@@ -883,6 +963,9 @@ class CompleteSubscriptionManager:
                     "max_ultrafast_signals": max_ultrafast,
                     "ultrafast_used": ultrafast_used,
                     "ultrafast_remaining": max_ultrafast - ultrafast_used,
+                    "max_quantum_signals": max_quantum or 1,
+                    "quantum_used": quantum_used or 0,
+                    "quantum_remaining": (max_quantum or 1) - (quantum_used or 0),
                     "risk_acknowledged": risk_ack,
                     "total_profits": profits or 0,
                     "total_trades": trades or 0,
@@ -910,9 +993,9 @@ class CompleteSubscriptionManager:
             
             limits = plan_limits["TRIAL"]
             conn.execute("""
-                INSERT INTO users (user_id, plan_type, max_daily_signals, max_ultrafast_signals) 
-                VALUES (?, ?, ?, ?)
-            """, (user_id, "TRIAL", limits["signals"], limits["ultrafast"]))
+                INSERT INTO users (user_id, plan_type, max_daily_signals, max_ultrafast_signals, max_quantum_signals) 
+                VALUES (?, ?, ?, ?, ?)
+            """, (user_id, "TRIAL", limits["signals"], limits["ultrafast"], limits["quantum"]))
             conn.commit()
             conn.close()
             
@@ -1575,7 +1658,96 @@ Trading carries significant risk of loss. Only trade with risk capital you can a
             logger.error(f"❌ ULTRAFAST signal sending failed: {e}")
             raise
 
-    # ... PRESERVED: All other methods (send_quick_signal, send_standard_signal, show_risk_management, etc.)
+    async def send_quick_signal(self, chat_id, signal):
+        """PRESERVED: Send QUICK signal"""
+        direction_emoji = "🟢" if signal["direction"] == "BUY" else "🔴"
+        
+        message = f"""
+🚀 *QUICK TRADING SIGNAL* ⚡
+
+{direction_emoji} *{signal['symbol']}* | **{signal['direction']}**
+
+💵 *Entry:* `{signal['entry_price']}`
+✅ *TP:* `{signal['take_profit']}`
+❌ *SL:* `{signal['stop_loss']}`
+
+📊 *Analysis:*
+• Confidence: *{signal['confidence']*100:.1f}%*
+• Risk/Reward: *1:{signal['risk_reward']}*
+• Timeframe: *{signal['timeframe']}*
+• Session: *{signal['session']}*
+
+🎯 *Execute this trade now!*
+"""
+        keyboard = [
+            [InlineKeyboardButton("✅ TRADE EXECUTED", callback_data="trade_done")],
+            [InlineKeyboardButton("🚀 NEW QUICK SIGNAL", callback_data="quick_signal")]
+        ]
+        
+        await self.app.bot.send_message(
+            chat_id,
+            message,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+
+    async def send_standard_signal(self, chat_id, signal):
+        """PRESERVED: Send STANDARD signal"""
+        direction_emoji = "🟢" if signal["direction"] == "BUY" else "🔴"
+        
+        message = f"""
+📊 *TRADING SIGNAL* 🎯
+
+{direction_emoji} *{signal['symbol']}* | **{signal['direction']}**
+
+💵 *Entry:* `{signal['entry_price']}`
+✅ *TP:* `{signal['take_profit']}`
+❌ *SL:* `{signal['stop_loss']}`
+
+📈 *Detailed Analysis:*
+• Confidence: *{signal['confidence']*100:.1f}%*
+• Risk/Reward: *1:{signal['risk_reward']}*
+• Timeframe: *{signal['timeframe']}*
+• Session: *{signal['session']}*
+
+🎯 *Recommended trade execution*
+"""
+        keyboard = [
+            [InlineKeyboardButton("✅ TRADE EXECUTED", callback_data="trade_done")],
+            [InlineKeyboardButton("🔄 NEW SIGNAL", callback_data="normal_signal")]
+        ]
+        
+        await self.app.bot.send_message(
+            chat_id,
+            message,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+
+    async def show_risk_management(self, chat_id):
+        """PRESERVED: Show risk management guide"""
+        message = """
+🛡️ *RISK MANAGEMENT GUIDE* 🛡️
+
+💰 *Essential Rules:*
+• Risk Only 1-2% per trade
+• Always Use Stop Loss
+• Maintain 1:1.5+ Risk/Reward
+• Maximum 5% total exposure
+
+🚨 *Trade responsibly!*
+"""
+        keyboard = [
+            [InlineKeyboardButton("⚡ GET SIGNAL", callback_data="ultrafast_menu")],
+            [InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]
+        ]
+        
+        await self.app.bot.send_message(
+            chat_id=chat_id,
+            text=message,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
 
 # ==================== COMPLETE TELEGRAM BOT HANDLER (PRESERVED + ENHANCED) ====================
 class CompleteTelegramBotHandler:
