@@ -1,3 +1,9 @@
+#!/usr/bin/env python3
+"""
+LEKZY FX AI PRO - WORLD CLASS #1 TRADING BOT
+REAL MARKET ANALYSIS • PROFESSIONAL SIGNALS • ALL FEATURES
+"""
+
 import os
 import asyncio
 import sqlite3
@@ -252,12 +258,18 @@ def initialize_database():
 # ==================== WORLD-CLASS MARKET DATA ENGINE ====================
 class ProfessionalMarketDataEngine:
     def __init__(self):
-        self.session = aiohttp.ClientSession()
+        self.session = None
         self.cache = {}
+        
+    async def ensure_session(self):
+        """Ensure aiohttp session is created"""
+        if self.session is None:
+            self.session = aiohttp.ClientSession()
         
     async def fetch_real_market_data(self, symbol, interval="5min"):
         """FETCH REAL MARKET DATA - NO DEMO"""
         try:
+            await self.ensure_session()
             formatted_symbol = symbol.replace('/', '')
             
             # Try Twelve Data API first
@@ -333,6 +345,7 @@ class ProfessionalMarketDataEngine:
     async def get_live_price(self, symbol):
         """Get LIVE market price"""
         try:
+            await self.ensure_session()
             market_data = await self.fetch_real_market_data(symbol, "1min")
             
             if market_data["success"]:
@@ -360,7 +373,8 @@ class ProfessionalMarketDataEngine:
             return 1.08500
     
     async def close(self):
-        await self.session.close()
+        if self.session:
+            await self.session.close()
 
 # ==================== WORLD-CLASS AI ANALYSIS ENGINE ====================
 class WorldClassAIAnalysis:
@@ -613,7 +627,9 @@ class WorldClassSignalGenerator:
         self.ai_engine = WorldClassAIAnalysis(self.data_engine)
         self.pairs = Config.TRADING_PAIRS
     
-    def initialize(self):
+    async def initialize(self):
+        """Async initialization"""
+        await self.data_engine.ensure_session()
         logger.info("✅ WORLD-CLASS Signal Generator Initialized")
         return True
     
@@ -868,8 +884,9 @@ class SimpleTradingBot:
         self.app = application
         self.signal_gen = WorldClassSignalGenerator()
     
-    def initialize(self):
-        self.signal_gen.initialize()
+    async def initialize(self):
+        """Async initialization"""
+        await self.signal_gen.initialize()
         logger.info("✅ Simple TradingBot initialized with WORLD-CLASS AI")
         return True
     
@@ -977,7 +994,8 @@ class SimpleTelegramHandler:
         self.app = None
         self.bot_core = None
     
-    def initialize(self):
+    async def initialize(self):
+        """Async initialization"""
         try:
             if not self.token or self.token == "your_bot_token_here":
                 logger.error("❌ TELEGRAM_TOKEN not set!")
@@ -985,7 +1003,7 @@ class SimpleTelegramHandler:
             
             self.app = Application.builder().token(self.token).build()
             self.bot_core = SimpleTradingBot(self.app)
-            self.bot_core.initialize()
+            await self.bot_core.initialize()
             
             # Basic handlers
             handlers = [
@@ -1065,6 +1083,7 @@ class SimpleTelegramHandler:
     def start_polling(self):
         try:
             logger.info("🔄 Starting WORLD-CLASS bot polling...")
+            # Create new event loop for polling
             self.app.run_polling()
         except Exception as e:
             logger.error(f"❌ Polling failed: {e}")
@@ -1076,7 +1095,7 @@ async def test_world_class_system():
     logger.info("🧪 Testing WORLD-CLASS AI System...")
     
     signal_gen = WorldClassSignalGenerator()
-    signal_gen.initialize()
+    await signal_gen.initialize()
     
     # Test with major pair
     symbol = "EUR/USD"
@@ -1094,7 +1113,8 @@ async def test_world_class_system():
     
     await signal_gen.data_engine.close()
 
-def main():
+async def main_async():
+    """Main async function"""
     logger.info("🚀 Starting LEKZY FX AI PRO - WORLD CLASS #1 TRADING BOT...")
     
     try:
@@ -1105,11 +1125,11 @@ def main():
         logger.info("✅ Professional web server started")
         
         # Test the system
-        asyncio.run(test_world_class_system())
+        await test_world_class_system()
         
         # Start the bot
         bot_handler = SimpleTelegramHandler()
-        success = bot_handler.initialize()
+        success = await bot_handler.initialize()
         
         if success:
             logger.info("🎯 LEKZY FX AI PRO - WORLD CLASS READY!")
@@ -1118,12 +1138,18 @@ def main():
             logger.info("✅ PROFESSIONAL SIGNALS: GENERATING")
             logger.info("✅ ALL FEATURES: PRESERVED")
             
+            # Start polling
             bot_handler.start_polling()
         else:
             logger.error("❌ Failed to start bot")
             
     except Exception as e:
         logger.error(f"❌ Application failed: {e}")
+
+def main():
+    """Main entry point with proper event loop handling"""
+    # Run the async main function
+    asyncio.run(main_async())
 
 if __name__ == "__main__":
     main()
