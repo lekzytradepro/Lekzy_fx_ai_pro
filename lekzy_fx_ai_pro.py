@@ -141,14 +141,16 @@ def health():
     })
 
 def run_web_server():
+    """Run Flask web server in separate thread"""
     try:
         port = int(os.environ.get('PORT', Config.PORT))
         logger.info(f"🌐 Starting professional web server on port {port}")
-        app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
+        app.run(host='0.0.0.0', port=port, debug=False, threaded=True, use_reloader=False)
     except Exception as e:
         logger.error(f"❌ Web server failed: {e}")
 
 def start_web_server():
+    """Start web server in background thread"""
     web_thread = Thread(target=run_web_server)
     web_thread.daemon = True
     web_thread.start()
@@ -206,45 +208,6 @@ def initialize_database():
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 closed_at TEXT,
                 risk_reward REAL
-            )
-        """)
-
-        # ADMIN SESSIONS
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS admin_sessions (
-                user_id INTEGER PRIMARY KEY,
-                username TEXT,
-                login_time TEXT,
-                token_used TEXT
-            )
-        """)
-
-        # SUBSCRIPTION TOKENS
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS subscription_tokens (
-                token TEXT PRIMARY KEY,
-                plan_type TEXT DEFAULT 'BASIC',
-                days_valid INTEGER DEFAULT 30,
-                created_by INTEGER,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                used_by INTEGER DEFAULT NULL,
-                used_at TEXT DEFAULT NULL,
-                status TEXT DEFAULT 'ACTIVE'
-            )
-        """)
-
-        # ADMIN TOKENS TABLE
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS admin_tokens (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                token TEXT UNIQUE,
-                plan_type TEXT,
-                days_valid INTEGER,
-                created_by INTEGER,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                used_by INTEGER DEFAULT NULL,
-                used_at TEXT DEFAULT NULL,
-                status TEXT DEFAULT 'ACTIVE'
             )
         """)
 
@@ -1081,10 +1044,15 @@ class SimpleTelegramHandler:
             await query.edit_message_text("❌ Action failed. Use /start to refresh")
     
     def start_polling(self):
+        """Start bot polling with proper event loop handling"""
         try:
             logger.info("🔄 Starting WORLD-CLASS bot polling...")
-            # Create new event loop for polling
-            self.app.run_polling()
+            # Run polling in the main thread with its own event loop
+            self.app.run_polling(
+                drop_pending_updates=True,
+                allowed_updates=Update.ALL_TYPES,
+                close_loop=False  # Don't close the loop when stopping
+            )
         except Exception as e:
             logger.error(f"❌ Polling failed: {e}")
             raise
@@ -1113,43 +1081,49 @@ async def test_world_class_system():
     
     await signal_gen.data_engine.close()
 
-async def main_async():
-    """Main async function"""
+def run_bot():
+    """Run the bot in a separate thread with its own event loop"""
+    try:
+        bot_handler = SimpleTelegramHandler()
+        
+        # Create new event loop for the bot thread
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        # Initialize and run the bot
+        success = loop.run_until_complete(bot_handler.initialize())
+        
+        if success:
+            logger.info("🤖 Telegram Bot starting polling...")
+            bot_handler.start_polling()
+        else:
+            logger.error("❌ Failed to initialize bot")
+            
+    except Exception as e:
+        logger.error(f"❌ Bot thread failed: {e}")
+
+def main():
+    """Main entry point with proper thread separation"""
     logger.info("🚀 Starting LEKZY FX AI PRO - WORLD CLASS #1 TRADING BOT...")
     
     try:
+        # Initialize database
         initialize_database()
         logger.info("✅ Professional database initialized")
         
+        # Start web server in background thread
         start_web_server()
         logger.info("✅ Professional web server started")
         
-        # Test the system
-        await test_world_class_system()
+        # Test the AI system
+        asyncio.run(test_world_class_system())
         
-        # Start the bot
-        bot_handler = SimpleTelegramHandler()
-        success = await bot_handler.initialize()
-        
-        if success:
-            logger.info("🎯 LEKZY FX AI PRO - WORLD CLASS READY!")
-            logger.info("✅ REAL MARKET ANALYSIS: ACTIVE")
-            logger.info("✅ WORLD-CLASS AI: OPERATIONAL") 
-            logger.info("✅ PROFESSIONAL SIGNALS: GENERATING")
-            logger.info("✅ ALL FEATURES: PRESERVED")
-            
-            # Start polling
-            bot_handler.start_polling()
-        else:
-            logger.error("❌ Failed to start bot")
+        # Start the bot in main thread
+        logger.info("🎯 Starting Telegram Bot...")
+        run_bot()
             
     except Exception as e:
         logger.error(f"❌ Application failed: {e}")
-
-def main():
-    """Main entry point with proper event loop handling"""
-    # Run the async main function
-    asyncio.run(main_async())
 
 if __name__ == "__main__":
     main()
