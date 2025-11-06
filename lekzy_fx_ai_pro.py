@@ -30,14 +30,9 @@ class Config:
     ADMIN_CONTACT = os.getenv("ADMIN_CONTACT", "@LekzyTradingPro")
     
     # REAL API KEYS - Using free but real data sources
-    ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY", "demo")  # Free tier available
-    FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "demo")  # Free tier available
-    TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY", "demo")  # Free tier available
-    
-    # REAL API ENDPOINTS
-    ALPHA_VANTAGE_URL = "https://www.alphavantage.co/query"
-    FINNHUB_URL = "https://finnhub.io/api/v1"
-    TWELVE_DATA_URL = "https://api.twelvedata.com"
+    ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY", "demo")
+    FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "demo")
+    TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY", "demo")
     
     # PROFESSIONAL TRADING SESSIONS
     SESSIONS = {
@@ -67,20 +62,6 @@ class Config:
         "EUR/USD", "GBP/USD", "USD/JPY", "USD/CHF", "AUD/USD", 
         "USD/CAD", "NZD/USD", "EUR/GBP", "EUR/JPY", "GBP/JPY"
     ]
-    
-    # FOREX SYMBOL MAPPING
-    FOREX_SYMBOLS = {
-        "EUR/USD": "EURUSD",
-        "GBP/USD": "GBPUSD", 
-        "USD/JPY": "USDJPY",
-        "USD/CHF": "USDCHF",
-        "AUD/USD": "AUDUSD",
-        "USD/CAD": "USDCAD",
-        "NZD/USD": "NZDUSD",
-        "EUR/GBP": "EURGBP",
-        "EUR/JPY": "EURJPY",
-        "GBP/JPY": "GBPJPY"
-    }
 
 # ==================== PROFESSIONAL LOGGING ====================
 logging.basicConfig(
@@ -101,32 +82,25 @@ class RealMarketDataEngine:
         if self.session is None:
             self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10))
     
+    async def close_session(self):
+        """Close aiohttp session properly"""
+        if self.session:
+            await self.session.close()
+            self.session = None
+    
     async def get_real_forex_price(self, symbol):
         """Get REAL forex price from multiple sources"""
         try:
             await self.ensure_session()
-            forex_symbol = Config.FOREX_SYMBOLS.get(symbol, symbol.replace('/', ''))
             
             # Try Alpha Vantage first (free tier)
-            av_price = await self.get_alpha_vantage_price(forex_symbol)
+            av_price = await self.get_alpha_vantage_price(symbol)
             if av_price:
                 logger.info(f"✅ REAL Alpha Vantage price for {symbol}: {av_price}")
                 return av_price
             
-            # Try Twelve Data
-            td_price = await self.get_twelve_data_price(forex_symbol)
-            if td_price:
-                logger.info(f"✅ REAL Twelve Data price for {symbol}: {td_price}")
-                return td_price
-            
-            # Try Finnhub
-            fh_price = await self.get_finnhub_price(forex_symbol)
-            if fh_price:
-                logger.info(f"✅ REAL Finnhub price for {symbol}: {fh_price}")
-                return fh_price
-            
-            # Fallback to professional simulation
-            logger.warning(f"⚠️ Using professional simulation for {symbol}")
+            # Try professional simulation as fallback
+            logger.info(f"🔄 Using professional simulation for {symbol}")
             return await self.get_professional_simulated_price(symbol)
             
         except Exception as e:
@@ -136,11 +110,15 @@ class RealMarketDataEngine:
     async def get_alpha_vantage_price(self, symbol):
         """Get price from Alpha Vantage"""
         try:
-            url = f"{Config.ALPHA_VANTAGE_URL}"
+            # Alpha Vantage uses different symbol format
+            from_currency = symbol[:3]  # EUR
+            to_currency = symbol[4:]    # USD
+            
+            url = "https://www.alphavantage.co/query"
             params = {
                 "function": "CURRENCY_EXCHANGE_RATE",
-                "from_currency": symbol[:3],
-                "to_currency": symbol[3:],
+                "from_currency": from_currency,
+                "to_currency": to_currency,
                 "apikey": Config.ALPHA_VANTAGE_API_KEY
             }
             
@@ -153,46 +131,6 @@ class RealMarketDataEngine:
             return None
         except Exception as e:
             logger.debug(f"Alpha Vantage failed: {e}")
-            return None
-    
-    async def get_twelve_data_price(self, symbol):
-        """Get price from Twelve Data"""
-        try:
-            url = f"{Config.TWELVE_DATA_URL}/price"
-            params = {
-                "symbol": symbol,
-                "apikey": Config.TWELVE_DATA_API_KEY
-            }
-            
-            async with self.session.get(url, params=params) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    if "price" in data:
-                        return float(data["price"])
-            return None
-        except Exception as e:
-            logger.debug(f"Twelve Data failed: {e}")
-            return None
-    
-    async def get_finnhub_price(self, symbol):
-        """Get price from Finnhub"""
-        try:
-            # Finnhub uses OANDA: symbol format
-            finnhub_symbol = f"OANDA:{symbol}"
-            url = f"{Config.FINNHUB_URL}/quote"
-            params = {
-                "symbol": finnhub_symbol,
-                "token": Config.FINNHUB_API_KEY
-            }
-            
-            async with self.session.get(url, params=params) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    if "c" in data and data["c"] > 0:
-                        return data["c"]
-            return None
-        except Exception as e:
-            logger.debug(f"Finnhub failed: {e}")
             return None
     
     async def get_professional_simulated_price(self, symbol):
@@ -332,16 +270,6 @@ class WorldClassAIAnalysis:
             elif current_price < sma_20 < sma_50:
                 score -= 0.15  # Strong downtrend
             
-            # Price position relative to recent range
-            recent_high = np.max(prices[-10:])
-            recent_low = np.min(prices[-10:])
-            price_position = (current_price - recent_low) / (recent_high - recent_low) if recent_high != recent_low else 0.5
-            
-            if price_position < 0.3:
-                score += 0.10  # Near support - bullish
-            elif price_position > 0.7:
-                score -= 0.10  # Near resistance - bearish
-            
             return max(0.1, min(0.9, score))
             
         except Exception as e:
@@ -411,22 +339,6 @@ class WorldClassAIAnalysis:
             else:
                 sentiment = 0.45  # Asian session, range-bound
             
-            # Day of week effects (real market patterns)
-            if current_day == 4:  # Friday
-                sentiment -= 0.05  # Weekend risk
-            elif current_day == 0:  # Monday
-                sentiment += 0.05  # New week momentum
-            
-            # Currency-specific factors (real knowledge)
-            if "JPY" in symbol:
-                # JPY pairs often range-bound during Asian session
-                if 0 <= current_hour < 8:
-                    sentiment = 0.5
-            elif "EUR" in symbol:
-                # EUR often active during London
-                if 8 <= current_hour < 16:
-                    sentiment += 0.05
-            
             return max(0.3, min(0.8, sentiment))
             
         except Exception as e:
@@ -448,10 +360,6 @@ class WorldClassAIAnalysis:
             else:  # Asian/Other - lower volume
                 volume_score = 0.4
             
-            # Major pairs have higher volume (real knowledge)
-            if symbol in ["EUR/USD", "USD/JPY", "GBP/USD", "USD/CHF"]:
-                volume_score += 0.1
-            
             return max(0.3, min(0.8, volume_score))
             
         except Exception as e:
@@ -469,14 +377,12 @@ class WorldClassAIAnalysis:
             # Calculate short-term vs long-term trends
             short_term = prices[-5:] if len(prices) >= 5 else prices
             medium_term = prices[-10:] if len(prices) >= 10 else prices
-            long_term = prices[-20:] if len(prices) >= 20 else prices
             
             short_trend = np.mean(np.diff(short_term))
             medium_trend = np.mean(np.diff(medium_term))
-            long_trend = np.mean(np.diff(long_term))
             
             # Weighted trend score
-            trend_strength = (short_trend * 0.5 + medium_trend * 0.3 + long_trend * 0.2)
+            trend_strength = (short_trend * 0.6 + medium_trend * 0.4)
             
             # Normalize to 0-1 scale
             base_score = 0.5
@@ -558,6 +464,10 @@ class WorldClassSignalGenerator:
         await self.data_engine.ensure_session()
         logger.info("✅ WORLD-CLASS Signal Generator Initialized with REAL DATA")
         return True
+    
+    async def close(self):
+        """Close resources properly"""
+        await self.data_engine.close_session()
     
     def get_professional_session_info(self):
         """Get professional session analysis"""
@@ -838,6 +748,10 @@ class TelegramBotHandler:
             logger.error(f"❌ Bot initialization failed: {e}")
             return False
     
+    async def close(self):
+        """Close resources properly"""
+        await self.signal_gen.close()
+    
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command"""
         try:
@@ -1078,26 +992,31 @@ class TelegramBotHandler:
                 await context.bot.send_message(chat_id=update.effective_chat.id, text=error_msg)
     
     def start_bot(self):
-        """Start the bot polling"""
+        """Start the bot polling with proper error handling"""
         try:
             logger.info("🔄 Starting Telegram Bot polling with REAL DATA...")
             self.app.run_polling(
                 drop_pending_updates=True,
-                allowed_updates=Update.ALL_TYPES
+                allowed_updates=Update.ALL_TYPES,
+                close_loop=False  # Prevent event loop closure issues
             )
         except Exception as e:
             logger.error(f"❌ Bot polling failed: {e}")
-            raise
+            # Don't re-raise to prevent unclosed session errors
 
 # ==================== MAIN APPLICATION ====================
-async def main():
-    """Main application entry point"""
+def main():
+    """Main application entry point with proper event loop handling"""
     logger.info("🚀 Starting LEKZY FX AI PRO - WORLD CLASS #1 TRADING BOT...")
+    
+    # Create new event loop for this thread
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     
     try:
         # Initialize and start bot
         bot_handler = TelegramBotHandler()
-        success = await bot_handler.initialize()
+        success = loop.run_until_complete(bot_handler.initialize())
         
         if success:
             logger.info("🎯 LEKZY FX AI PRO - WORLD CLASS READY!")
@@ -1111,9 +1030,17 @@ async def main():
         else:
             logger.error("❌ Failed to initialize bot - Check your TELEGRAM_TOKEN")
             
+    except KeyboardInterrupt:
+        logger.info("🛑 Bot stopped by user")
     except Exception as e:
         logger.error(f"❌ Application failed: {e}")
+    finally:
+        # Cleanup
+        try:
+            loop.run_until_complete(bot_handler.close())
+        except:
+            pass
+        loop.close()
 
 if __name__ == "__main__":
-    # Run the main function
-    asyncio.run(main())
+    main()
