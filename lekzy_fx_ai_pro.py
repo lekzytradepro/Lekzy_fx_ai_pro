@@ -391,5 +391,99 @@ class WorldClassSignalGenerator:
         await self.data_engine.test_api_connections()  # Test all APIs on startup
         logger.info("✅ WORLD-CLASS Signal Generator Initialized with REAL DATA")
         return True
+      # ==================== FLASK SERVER (for hosting platforms) ====================
+def create_flask_app():
+    app = Flask(__name__)
+    
+    @app.route('/')
+    def home():
+        return "🚀 LEKZY FX AI PRO - WORLD CLASS TRADING BOT IS RUNNING"
+    
+    @app.route('/health')
+    def health():
+        return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+    
+    return app
 
-# ... (rest of the bot code remains the same but will show real data status)
+def run_flask_server():
+    """Run Flask server for hosting platform compatibility"""
+    app = create_flask_app()
+    port = int(os.environ.get("PORT", Config.PORT))
+    app.run(host='0.0.0.0', port=port, debug=False)
+
+# ==================== BOT INITIALIZATION ====================
+async def initialize_bot():
+    """Initialize bot with proper error handling"""
+    try:
+        logger.info("🚀 Initializing LEKZY FX AI PRO...")
+        
+        # Initialize database (only once)
+        if not init_database():
+            raise Exception("Database initialization failed")
+        
+        # Initialize signal generator
+        signal_generator = WorldClassSignalGenerator()
+        await signal_generator.initialize()
+        
+        logger.info("✅ LEKZY FX AI PRO initialized successfully!")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Bot initialization failed: {e}")
+        return False
+# ==================== MAIN APPLICATION ====================
+async def main():
+    """Main application entry point"""
+    try:
+        # Initialize bot
+        success = await initialize_bot()
+        if not success:
+            logger.error("❌ Failed to initialize bot")
+            return
+        
+        # Create Telegram application
+        application = Application.builder().token(Config.TELEGRAM_TOKEN).build()
+        
+        # Add handlers
+        application.add_handler(CommandHandler("start", start_command))
+        application.add_handler(CommandHandler("signal", signal_command))
+        application.add_handler(CommandHandler("menu", menu_command))
+        application.add_handler(CommandHandler("status", status_command))
+        application.add_handler(CommandHandler("admin", admin_command))
+        application.add_handler(CallbackQueryHandler(button_handler))
+        
+        # Start bot
+        logger.info("🤖 Starting Telegram bot polling...")
+        await application.run_polling()
+        
+    except Exception as e:
+        logger.error(f"❌ Main application error: {e}")
+        # Don't exit immediately, keep the process alive for hosting platforms
+        await asyncio.sleep(3600)  # Sleep for 1 hour before exiting
+
+def start_services():
+    """Start all services in a way compatible with hosting platforms"""
+    try:
+        # Start Flask server in a separate thread
+        flask_thread = Thread(target=run_flask_server, daemon=True)
+        flask_thread.start()
+        logger.info(f"🌐 Flask server started on port {Config.PORT}")
+        
+        # Start the bot in the main thread
+        asyncio.run(main())
+        
+    except Exception as e:
+        logger.error(f"❌ Service startup failed: {e}")
+
+# ==================== DEPLOYMENT ENTRY POINT ====================
+if __name__ == "__main__":
+    logger.info("🎯 LEKZY FX AI PRO - Deployment Starting...")
+    
+    # Check if we're in a hosting environment
+    if os.environ.get('RAILWAY_STATIC_URL') or os.environ.get('REPLIT_DB_URL') or os.environ.get('PYTHONANYWHERE_SITE'):
+        logger.info("🏢 Detected hosting environment")
+        # In hosting environments, we need to keep the process alive
+        start_services()
+    else:
+        # Local development
+        asyncio.run(main())
