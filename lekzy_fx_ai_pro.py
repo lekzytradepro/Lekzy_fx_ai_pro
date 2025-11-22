@@ -17,14 +17,16 @@ import requests
 import pandas as pd
 import numpy as np
 import aiohttp
+import threading  # ← ADD THIS LINE
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 from flask import Flask
-from threading import Thread
 import ta
 import warnings
 warnings.filterwarnings('ignore')
+
+# ... rest of your code
 
 # ==================== ENHANCED PROFESSIONAL CONFIGURATION ====================
 class EnhancedConfig:
@@ -1558,8 +1560,9 @@ async def initialize_bot():
     except Exception as e:
         logger.error(f"❌ Bot initialization failed: {e}")
         return False
-
 # ==================== FIXED MAIN APPLICATION ====================
+import threading  # ADD THIS AT THE TOP WITH OTHER IMPORTS
+
 async def main_async():
     """Main async application entry point with proper event loop handling"""
     try:
@@ -1603,8 +1606,6 @@ def main():
             logger.info("🏢 Detected hosting environment")
             
             # Start both services
-            import threading
-            
             # Start Flask in a thread
             flask_thread = threading.Thread(target=run_flask_server, daemon=True)
             flask_thread.start()
