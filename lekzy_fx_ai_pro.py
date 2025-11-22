@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-LEKZY FX AI PRO - Instant Signal System with Auto-Signals
+LEKZY FX AI PRO - Professional Auto Signal System with Daily Limits
 """
 
 import os
@@ -41,7 +41,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "🤖 LEKZY FX AI PRO - Instant Signal System 🚀"
+    return "🤖 LEKZY FX AI PRO - Professional Auto Signal System 🚀"
 
 @app.route('/health')
 def health():
@@ -84,6 +84,7 @@ def initialize_database():
                 signals_used INTEGER DEFAULT 0,
                 max_daily_signals INTEGER DEFAULT 5,
                 allowed_sessions TEXT DEFAULT '["MORNING"]',
+                auto_signals_enabled BOOLEAN DEFAULT FALSE,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -142,9 +143,19 @@ def initialize_database():
             )
         """)
 
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_signals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                signal_id TEXT,
+                signal_date TEXT DEFAULT CURRENT_DATE,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         conn.commit()
         conn.close()
-        logger.info("✅ Instant signal database initialized")
+        logger.info("✅ Professional auto signal database initialized")
         
     except Exception as e:
         logger.error(f"❌ Database setup failed: {e}")
@@ -277,12 +288,11 @@ class SessionManager:
         
         return upcoming
 
-# ==================== INSTANT SIGNAL GENERATOR ====================
-class InstantSignalGenerator:
+# ==================== PROFESSIONAL SIGNAL GENERATOR ====================
+class ProfessionalSignalGenerator:
     def __init__(self):
         self.all_pairs = ["EUR/USD", "GBP/USD", "USD/JPY", "XAU/USD", "AUD/USD", "USD/CAD"]
         self.pending_signals = {}
-        self.auto_signal_active = True
     
     def generate_professional_analysis(self, symbol: str) -> dict:
         """Generate professional trading analysis with new candle focus"""
@@ -324,99 +334,109 @@ class InstantSignalGenerator:
     
     def generate_pre_entry_signal(self, symbol: str = None, is_admin: bool = False) -> dict:
         """Generate pre-entry signal with professional analysis"""
-        if not symbol:
-            symbol = random.choice(self.all_pairs)
-        
-        analysis = self.generate_professional_analysis(symbol)
-        direction = "BUY" if random.random() > 0.48 else "SELL"
-        
-        # Professional price calculation
-        base_price = analysis["key_level"]
-        spread = 0.0003  # Professional spread
-        
-        if direction == "BUY":
-            entry_price = round(base_price + spread, 5)
-        else:
-            entry_price = round(base_price - spread, 5)
-        
-        # Professional confidence calculation
-        base_confidence = random.uniform(0.88, 0.97)
-        if is_admin:
-            base_confidence += 0.02
-        
-        signal_id = f"PRE_{symbol.replace('/', '')}_{int(time.time())}"
-        
-        # Calculate timestamps
-        current_time = datetime.now()
-        entry_time = current_time + timedelta(seconds=Config.PRE_ENTRY_DELAY)
-        
-        signal_data = {
-            "signal_id": signal_id,
-            "symbol": symbol,
-            "signal_type": "PRE_ENTRY",
-            "direction": direction,
-            "entry_price": entry_price,
-            "take_profit": 0.0,
-            "stop_loss": 0.0,
-            "confidence": min(0.98, round(base_confidence, 3)),
-            "session_type": "ADMIN_24_7" if is_admin else "AUTO",
-            "analysis": json.dumps(analysis),
-            "time_to_entry": Config.PRE_ENTRY_DELAY,
-            "risk_reward": 0.0,
-            "signal_style": "PROFESSIONAL",
-            "requested_by": "ADMIN" if is_admin else "USER",
-            "generated_at": current_time.isoformat(),
-            "current_time_str": current_time.strftime("%H:%M:%S"),
-            "entry_time_str": entry_time.strftime("%H:%M:%S")
-        }
-        
-        self.pending_signals[signal_id] = signal_data
-        return signal_data
+        try:
+            if not symbol:
+                symbol = random.choice(self.all_pairs)
+            
+            analysis = self.generate_professional_analysis(symbol)
+            direction = "BUY" if random.random() > 0.48 else "SELL"
+            
+            # Professional price calculation
+            base_price = analysis["key_level"]
+            spread = 0.0003  # Professional spread
+            
+            if direction == "BUY":
+                entry_price = round(base_price + spread, 5)
+            else:
+                entry_price = round(base_price - spread, 5)
+            
+            # Professional confidence calculation
+            base_confidence = random.uniform(0.88, 0.97)
+            if is_admin:
+                base_confidence += 0.02
+            
+            signal_id = f"PRE_{symbol.replace('/', '')}_{int(time.time())}"
+            
+            # Calculate timestamps
+            current_time = datetime.now()
+            entry_time = current_time + timedelta(seconds=Config.PRE_ENTRY_DELAY)
+            
+            signal_data = {
+                "signal_id": signal_id,
+                "symbol": symbol,
+                "signal_type": "PRE_ENTRY",
+                "direction": direction,
+                "entry_price": entry_price,
+                "take_profit": 0.0,
+                "stop_loss": 0.0,
+                "confidence": min(0.98, round(base_confidence, 3)),
+                "session_type": "ADMIN_24_7" if is_admin else "AUTO",
+                "analysis": json.dumps(analysis),
+                "time_to_entry": Config.PRE_ENTRY_DELAY,
+                "risk_reward": 0.0,
+                "signal_style": "PROFESSIONAL",
+                "requested_by": "ADMIN" if is_admin else "USER",
+                "generated_at": current_time.isoformat(),
+                "current_time_str": current_time.strftime("%H:%M:%S"),
+                "entry_time_str": entry_time.strftime("%H:%M:%S")
+            }
+            
+            self.pending_signals[signal_id] = signal_data
+            return signal_data
+            
+        except Exception as e:
+            logger.error(f"❌ Signal generation error: {e}")
+            return None
     
     def generate_entry_signal(self, pre_signal_id: str) -> dict:
         """Generate entry signal based on pre-entry with new candle confirmation"""
-        if pre_signal_id not in self.pending_signals:
+        try:
+            if pre_signal_id not in self.pending_signals:
+                return None
+            
+            pre_signal = self.pending_signals[pre_signal_id]
+            analysis = json.loads(pre_signal["analysis"])
+            
+            # Update analysis to confirm new candle
+            analysis["new_candle_confirmed"] = True
+            analysis["entry_executed"] = "NEW_CANDLE_BASED"
+            analysis["execution_time"] = datetime.now().isoformat()
+            
+            # Professional TP/SL calculation
+            movement = 0.0028  # Professional movement
+            risk_multiplier = 0.65  # Professional risk
+            
+            if pre_signal["direction"] == "BUY":
+                take_profit = round(pre_signal["entry_price"] + movement, 5)
+                stop_loss = round(pre_signal["entry_price"] - movement * risk_multiplier, 5)
+            else:
+                take_profit = round(pre_signal["entry_price"] - movement, 5)
+                stop_loss = round(pre_signal["entry_price"] + movement * risk_multiplier, 5)
+            
+            risk_reward = round((take_profit - pre_signal["entry_price"]) / (pre_signal["entry_price"] - stop_loss), 2) if pre_signal["direction"] == "BUY" else round((pre_signal["entry_price"] - take_profit) / (stop_loss - pre_signal["entry_price"]), 2)
+            
+            entry_signal_id = pre_signal_id.replace("PRE_", "ENTRY_")
+            
+            entry_signal = {
+                **pre_signal,
+                "signal_id": entry_signal_id,
+                "signal_type": "ENTRY",
+                "take_profit": take_profit,
+                "stop_loss": stop_loss,
+                "time_to_entry": 0,
+                "risk_reward": risk_reward,
+                "analysis": json.dumps(analysis),
+                "entry_time_actual": datetime.now().strftime("%H:%M:%S")
+            }
+            
+            del self.pending_signals[pre_signal_id]
+            return entry_signal
+            
+        except Exception as e:
+            logger.error(f"❌ Entry signal generation error: {e}")
             return None
-        
-        pre_signal = self.pending_signals[pre_signal_id]
-        analysis = json.loads(pre_signal["analysis"])
-        
-        # Update analysis to confirm new candle
-        analysis["new_candle_confirmed"] = True
-        analysis["entry_executed"] = "NEW_CANDLE_BASED"
-        analysis["execution_time"] = datetime.now().isoformat()
-        
-        # Professional TP/SL calculation
-        movement = 0.0028  # Professional movement
-        risk_multiplier = 0.65  # Professional risk
-        
-        if pre_signal["direction"] == "BUY":
-            take_profit = round(pre_signal["entry_price"] + movement, 5)
-            stop_loss = round(pre_signal["entry_price"] - movement * risk_multiplier, 5)
-        else:
-            take_profit = round(pre_signal["entry_price"] - movement, 5)
-            stop_loss = round(pre_signal["entry_price"] + movement * risk_multiplier, 5)
-        
-        risk_reward = round((take_profit - pre_signal["entry_price"]) / (pre_signal["entry_price"] - stop_loss), 2) if pre_signal["direction"] == "BUY" else round((pre_signal["entry_price"] - take_profit) / (stop_loss - pre_signal["entry_price"]), 2)
-        
-        entry_signal_id = pre_signal_id.replace("PRE_", "ENTRY_")
-        
-        entry_signal = {
-            **pre_signal,
-            "signal_id": entry_signal_id,
-            "signal_type": "ENTRY",
-            "take_profit": take_profit,
-            "stop_loss": stop_loss,
-            "time_to_entry": 0,
-            "risk_reward": risk_reward,
-            "analysis": json.dumps(analysis),
-            "entry_time_actual": datetime.now().strftime("%H:%M:%S")
-        }
-        
-        del self.pending_signals[pre_signal_id]
-        return entry_signal
 
-# ==================== USER & BROADCAST MANAGER ====================
+# ==================== USER & SUBSCRIPTION MANAGER ====================
 class UserManager:
     def __init__(self, db_path: str):
         self.db_path = db_path
@@ -443,7 +463,6 @@ class UserManager:
             cursor = conn.execute("SELECT COUNT(*) FROM users")
             return cursor.fetchone()[0]
 
-# ==================== SUBSCRIPTION MANAGER ====================
 class SubscriptionManager:
     def __init__(self, db_path: str):
         self.db_path = db_path
@@ -455,34 +474,102 @@ class SubscriptionManager:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("""
                 INSERT OR REPLACE INTO subscriptions 
-                (user_id, plan_type, start_date, end_date, payment_status, max_daily_signals, allowed_sessions)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (user_id, plan_type, start_date, end_date, payment_status, max_daily_signals, allowed_sessions, auto_signals_enabled)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 user_id, "TRIAL", datetime.now().isoformat(), 
-                end_date.isoformat(), "ACTIVE", 5, '["MORNING"]'
+                end_date.isoformat(), "ACTIVE", 5, '["MORNING"]', False
             ))
             conn.commit()
         
         logger.info(f"✅ Trial started: {username} ({user_id})")
     
-    def get_user_plan(self, user_id: int) -> str:
-        """Get user's current plan"""
+    def get_user_plan(self, user_id: int) -> dict:
+        """Get user's current plan and usage"""
         with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute(
-                "SELECT plan_type FROM subscriptions WHERE user_id = ?",
-                (user_id,)
-            )
+            cursor = conn.execute("""
+                SELECT plan_type, signals_used, max_daily_signals, auto_signals_enabled, allowed_sessions
+                FROM subscriptions WHERE user_id = ?
+            """, (user_id,))
             result = cursor.fetchone()
-            return result[0] if result else "TRIAL"
+            
+            if result:
+                plan_type, signals_used, max_daily, auto_enabled, allowed_sessions = result
+                return {
+                    "plan_type": plan_type,
+                    "signals_used": signals_used,
+                    "max_daily_signals": max_daily,
+                    "auto_signals_enabled": bool(auto_enabled),
+                    "allowed_sessions": json.loads(allowed_sessions) if allowed_sessions else ["MORNING"],
+                    "signals_remaining": max_daily - signals_used
+                }
+            else:
+                # Default trial plan
+                return {
+                    "plan_type": "TRIAL",
+                    "signals_used": 0,
+                    "max_daily_signals": 5,
+                    "auto_signals_enabled": False,
+                    "allowed_sessions": ["MORNING"],
+                    "signals_remaining": 5
+                }
+    
+    def can_user_request_signal(self, user_id: int) -> tuple:
+        """Check if user can request a signal"""
+        user_plan = self.get_user_plan(user_id)
+        
+        if user_plan["signals_used"] >= user_plan["max_daily_signals"]:
+            return False, "Daily signal limit reached. Upgrade for more signals!"
+        
+        # Check if user's allowed session is active
+        current_session = SessionManager().get_current_session()
+        if current_session["id"] not in user_plan["allowed_sessions"] and current_session["id"] != "ADMIN_24_7":
+            return False, f"Signal not available in {current_session['name']}. Your plan allows: {', '.join(user_plan['allowed_sessions'])}"
+        
+        return True, "OK"
+    
+    def increment_signal_count(self, user_id: int):
+        """Increment user's signal count"""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                UPDATE subscriptions 
+                SET signals_used = signals_used + 1 
+                WHERE user_id = ?
+            """, (user_id,))
+            conn.commit()
+    
+    def toggle_auto_signals(self, user_id: int) -> bool:
+        """Toggle auto signals for user"""
+        user_plan = self.get_user_plan(user_id)
+        new_status = not user_plan["auto_signals_enabled"]
+        
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                UPDATE subscriptions 
+                SET auto_signals_enabled = ? 
+                WHERE user_id = ?
+            """, (new_status, user_id))
+            conn.commit()
+        
+        return new_status
+    
+    def reset_daily_limits(self):
+        """Reset daily signal counts (run at midnight)"""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("UPDATE subscriptions SET signals_used = 0")
+            conn.commit()
+        logger.info("✅ Daily signal limits reset")
 
-# ==================== INSTANT TRADING BOT ====================
-class InstantTradingBot:
+# ==================== PROFESSIONAL TRADING BOT ====================
+class ProfessionalTradingBot:
     def __init__(self, application):
         self.application = application
         self.session_manager = SessionManager()
-        self.signal_generator = InstantSignalGenerator()
+        self.signal_generator = ProfessionalSignalGenerator()
         self.user_manager = UserManager(Config.DB_PATH)
+        self.subscription_manager = SubscriptionManager(Config.DB_PATH)
         self.is_running = False
+        self.auto_signals_tasks = {}
     
     async def notify_admin_new_user(self, user: dict):
         """Notify admin about new user"""
@@ -570,6 +657,140 @@ class InstantTradingBot:
         except Exception as e:
             logger.error(f"❌ Broadcast error: {e}")
     
+    async def start_user_auto_signals(self, user_id: int):
+        """Start auto signals for a specific user"""
+        try:
+            user_plan = self.subscription_manager.get_user_plan(user_id)
+            
+            if not user_plan["auto_signals_enabled"]:
+                return
+            
+            async def user_auto_signal_loop():
+                while self.is_running and user_plan["auto_signals_enabled"]:
+                    try:
+                        # Check daily limit
+                        if user_plan["signals_used"] >= user_plan["max_daily_signals"]:
+                            await self.application.bot.send_message(
+                                chat_id=user_id,
+                                text="🔔 *Auto Signals Paused* - Daily limit reached. Upgrade for unlimited signals! 💎",
+                                parse_mode='Markdown'
+                            )
+                            break
+                        
+                        # Check session access
+                        current_session = self.session_manager.get_current_session()
+                        if current_session["id"] not in user_plan["allowed_sessions"]:
+                            await asyncio.sleep(300)  # Check every 5 minutes
+                            continue
+                        
+                        # Generate signal
+                        symbol = random.choice(current_session["optimal_pairs"])
+                        pre_signal = self.signal_generator.generate_pre_entry_signal(symbol, False)
+                        
+                        if pre_signal:
+                            # Store signal
+                            with sqlite3.connect(Config.DB_PATH) as conn:
+                                conn.execute("""
+                                    INSERT INTO signals 
+                                    (signal_id, symbol, signal_type, direction, entry_price, take_profit, stop_loss, confidence, session_type, analysis, time_to_entry, risk_reward, signal_style, requested_by)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                """, (
+                                    pre_signal["signal_id"], pre_signal["symbol"], pre_signal["signal_type"],
+                                    pre_signal["direction"], pre_signal["entry_price"], pre_signal["take_profit"],
+                                    pre_signal["stop_loss"], pre_signal["confidence"], pre_signal["session_type"],
+                                    pre_signal["analysis"], pre_signal["time_to_entry"], pre_signal["risk_reward"],
+                                    pre_signal["signal_style"], "AUTO"
+                                ))
+                                conn.commit()
+                            
+                            # Send pre-entry to user
+                            analysis = json.loads(pre_signal["analysis"])
+                            direction_emoji = "🟢" if pre_signal["direction"] == "BUY" else "🔴"
+                            
+                            pre_message = f"""
+🤖 *AUTO SIGNAL - PRE ENTRY*
+
+{direction_emoji} *{pre_signal['symbol']}* | **{pre_signal['direction']}**
+💵 *Expected Entry:* `{pre_signal['entry_price']:.5f}`
+🎯 *Confidence:* {pre_signal['confidence']*100:.1f}%
+
+⏰ *Timing:*
+• 🕐 Current Time: `{pre_signal['current_time_str']}`
+• 🎯 Expected Entry: `{pre_signal['entry_time_str']}`
+• ⏱️ Countdown: {Config.PRE_ENTRY_DELAY} seconds
+
+📊 *Analysis:* {analysis['candle_pattern']}
+
+*Entry signal coming soon...* ⚡
+"""
+                            await self.application.bot.send_message(
+                                chat_id=user_id,
+                                text=pre_message,
+                                parse_mode='Markdown'
+                            )
+                            
+                            # Wait for entry
+                            await asyncio.sleep(Config.PRE_ENTRY_DELAY)
+                            
+                            # Generate and send entry signal
+                            entry_signal = self.signal_generator.generate_entry_signal(pre_signal["signal_id"])
+                            
+                            if entry_signal:
+                                with sqlite3.connect(Config.DB_PATH) as conn:
+                                    conn.execute("""
+                                        INSERT INTO signals 
+                                        (signal_id, symbol, signal_type, direction, entry_price, take_profit, stop_loss, confidence, session_type, analysis, time_to_entry, risk_reward, signal_style, requested_by)
+                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    """, tuple(entry_signal.values()))
+                                    conn.commit()
+                                
+                                # Increment user signal count
+                                self.subscription_manager.increment_signal_count(user_id)
+                                user_plan["signals_used"] += 1
+                                
+                                entry_message = f"""
+🤖 *AUTO SIGNAL - ENTRY*
+
+{direction_emoji} *{entry_signal['symbol']}* | **{entry_signal['direction']}**
+💵 *Entry Price:* `{entry_signal['entry_price']:.5f}`
+✅ *Take Profit:* `{entry_signal['take_profit']:.5f}`
+❌ *Stop Loss:* `{entry_signal['stop_loss']:.5f}`
+
+📈 *Details:*
+• Confidence: *{entry_signal['confidence']*100:.1f}%*
+• Risk/Reward: *1:{entry_signal['risk_reward']}*
+• Remaining Signals: *{user_plan['max_daily_signals'] - user_plan['signals_used']}*
+
+*Execute this trade!* 🚀
+"""
+                                await self.application.bot.send_message(
+                                    chat_id=user_id,
+                                    text=entry_message,
+                                    parse_mode='Markdown'
+                                )
+                        
+                        # Wait before next auto signal (2-3 minutes)
+                        await asyncio.sleep(random.randint(120, 180))
+                        
+                    except Exception as e:
+                        logger.error(f"User auto signal error for {user_id}: {e}")
+                        await asyncio.sleep(60)
+            
+            # Start the auto signal loop for this user
+            task = asyncio.create_task(user_auto_signal_loop())
+            self.auto_signals_tasks[user_id] = task
+            logger.info(f"✅ Auto signals started for user {user_id}")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to start auto signals for user {user_id}: {e}")
+    
+    async def stop_user_auto_signals(self, user_id: int):
+        """Stop auto signals for a specific user"""
+        if user_id in self.auto_signals_tasks:
+            self.auto_signals_tasks[user_id].cancel()
+            del self.auto_signals_tasks[user_id]
+            logger.info(f"✅ Auto signals stopped for user {user_id}")
+    
     async def start_auto_services(self):
         """Start all automatic services"""
         self.is_running = True
@@ -583,72 +804,89 @@ class InstantTradingBot:
                     logger.error(f"Broadcast loop error: {e}")
                     await asyncio.sleep(60)
         
-        async def auto_signal_loop():
-            """Generate signals automatically in ALL active sessions"""
+        async def system_auto_signal_loop():
+            """Generate system-wide auto signals"""
             while self.is_running:
                 try:
                     session = self.session_manager.get_current_session()
                     
-                    # Generate auto signals in ALL sessions (not just when users request)
-                    if session["id"] != "CLOSED":
-                        logger.info(f"🎯 Auto-generating {session['name']} signals")
+                    if session["id"] != "CLOSED" and session["id"] != "ADMIN_24_7":
+                        logger.info(f"🎯 System Auto-generating {session['name']} signals")
                         
-                        for symbol in session["optimal_pairs"][:2]:  # Generate for 2 pairs
-                            # Generate pre-entry signal immediately
+                        for symbol in session["optimal_pairs"][:1]:
                             pre_signal = self.signal_generator.generate_pre_entry_signal(symbol, False)
                             
-                            # Store pre-entry
-                            with sqlite3.connect(Config.DB_PATH) as conn:
-                                conn.execute("""
-                                    INSERT INTO signals 
-                                    (signal_id, symbol, signal_type, direction, entry_price, take_profit, stop_loss, confidence, session_type, analysis, time_to_entry, risk_reward, signal_style, requested_by)
-                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                """, (
-                                    pre_signal["signal_id"], pre_signal["symbol"], pre_signal["signal_type"],
-                                    pre_signal["direction"], pre_signal["entry_price"], pre_signal["take_profit"],
-                                    pre_signal["stop_loss"], pre_signal["confidence"], pre_signal["session_type"],
-                                    pre_signal["analysis"], pre_signal["time_to_entry"], pre_signal["risk_reward"],
-                                    pre_signal["signal_style"], pre_signal["requested_by"]
-                                ))
-                                conn.commit()
-                            
-                            logger.info(f"📊 Auto Pre-entry: {pre_signal['symbol']} {pre_signal['direction']}")
-                            
-                            # Wait 40 seconds for entry
-                            await asyncio.sleep(Config.PRE_ENTRY_DELAY)
-                            
-                            # Generate entry signal
-                            entry_signal = self.signal_generator.generate_entry_signal(pre_signal["signal_id"])
-                            
-                            if entry_signal:
+                            if pre_signal:
                                 with sqlite3.connect(Config.DB_PATH) as conn:
                                     conn.execute("""
                                         INSERT INTO signals 
                                         (signal_id, symbol, signal_type, direction, entry_price, take_profit, stop_loss, confidence, session_type, analysis, time_to_entry, risk_reward, signal_style, requested_by)
                                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                    """, tuple(entry_signal.values()))
+                                    """, (
+                                        pre_signal["signal_id"], pre_signal["symbol"], pre_signal["signal_type"],
+                                        pre_signal["direction"], pre_signal["entry_price"], pre_signal["take_profit"],
+                                        pre_signal["stop_loss"], pre_signal["confidence"], pre_signal["session_type"],
+                                        pre_signal["analysis"], pre_signal["time_to_entry"], pre_signal["risk_reward"],
+                                        pre_signal["signal_style"], "SYSTEM_AUTO"
+                                    ))
                                     conn.commit()
                                 
-                                logger.info(f"🎯 Auto Entry: {entry_signal['symbol']} {entry_signal['direction']}")
+                                logger.info(f"📊 System Auto Pre-entry: {pre_signal['symbol']} {pre_signal['direction']}")
+                                
+                                await asyncio.sleep(Config.PRE_ENTRY_DELAY)
+                                
+                                entry_signal = self.signal_generator.generate_entry_signal(pre_signal["signal_id"])
+                                
+                                if entry_signal:
+                                    with sqlite3.connect(Config.DB_PATH) as conn:
+                                        conn.execute("""
+                                            INSERT INTO signals 
+                                            (signal_id, symbol, signal_type, direction, entry_price, take_profit, stop_loss, confidence, session_type, analysis, time_to_entry, risk_reward, signal_style, requested_by)
+                                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                        """, tuple(entry_signal.values()))
+                                        conn.commit()
+                                    
+                                    logger.info(f"🎯 System Auto Entry: {entry_signal['symbol']} {entry_signal['direction']}")
                     
-                    # Wait 60-90 seconds before next auto signal
-                    await asyncio.sleep(random.randint(60, 90))
+                    await asyncio.sleep(random.randint(90, 150))  # 1.5-2.5 minutes between system signals
                     
                 except Exception as e:
-                    logger.error(f"Auto signal error: {e}")
+                    logger.error(f"System auto signal error: {e}")
                     await asyncio.sleep(60)
         
-        # Start both services
+        async def daily_reset_loop():
+            """Reset daily limits at midnight"""
+            while self.is_running:
+                try:
+                    now = datetime.now()
+                    if now.hour == 0 and now.minute == 0:  # Midnight
+                        self.subscription_manager.reset_daily_limits()
+                        logger.info("✅ Daily limits reset")
+                    await asyncio.sleep(60)  # Check every minute
+                except Exception as e:
+                    logger.error(f"Daily reset error: {e}")
+                    await asyncio.sleep(60)
+        
+        # Start all services
         asyncio.create_task(broadcast_loop())
-        asyncio.create_task(auto_signal_loop())
-        logger.info("✅ Instant auto services started")
+        asyncio.create_task(system_auto_signal_loop())
+        asyncio.create_task(daily_reset_loop())
+        logger.info("✅ Professional auto services started")
     
     async def generate_signal_sequence(self, user_id: int, symbol: str = None, is_admin: bool = False):
-        """Generate signal sequence INSTANTLY without cooldown"""
+        """Generate signal sequence for user"""
         try:
-            # NO COOLDOWN CHECK - INSTANT SIGNALS
-            # Generate pre-entry signal immediately
+            # Check if user can request signal
+            if not is_admin:
+                can_request, message = self.subscription_manager.can_user_request_signal(user_id)
+                if not can_request:
+                    return {"error": message}
+            
+            # Generate pre-entry signal
             pre_signal = self.signal_generator.generate_pre_entry_signal(symbol, is_admin)
+            
+            if not pre_signal:
+                return {"error": "Failed to generate signal. Please try again."}
             
             # Store pre-entry
             with sqlite3.connect(Config.DB_PATH) as conn:
@@ -661,9 +899,13 @@ class InstantTradingBot:
                     pre_signal["direction"], pre_signal["entry_price"], pre_signal["take_profit"],
                     pre_signal["stop_loss"], pre_signal["confidence"], pre_signal["session_type"],
                     pre_signal["analysis"], pre_signal["time_to_entry"], pre_signal["risk_reward"],
-                    pre_signal["signal_style"], pre_signal["requested_by"]
+                    pre_signal["signal_style"], "ADMIN" if is_admin else "USER"
                 ))
                 conn.commit()
+            
+            # Increment user signal count if not admin
+            if not is_admin:
+                self.subscription_manager.increment_signal_count(user_id)
             
             logger.info(f"📊 {'Admin' if is_admin else 'User'} Pre-entry: {pre_signal['symbol']} {pre_signal['direction']}")
             
@@ -674,7 +916,7 @@ class InstantTradingBot:
             
         except Exception as e:
             logger.error(f"❌ Signal generation failed: {e}")
-            return None
+            return {"error": "Signal generation failed. Please try again."}
     
     async def generate_entry_signal(self, pre_signal_id: str):
         """Generate entry signal after pre-entry delay"""
@@ -699,8 +941,8 @@ class InstantTradingBot:
             logger.error(f"❌ Entry signal failed: {e}")
             return None
 
-# ==================== INSTANT TELEGRAM BOT ====================
-class InstantTelegramBot:
+# ==================== PROFESSIONAL TELEGRAM BOT ====================
+class ProfessionalTelegramBot:
     def __init__(self):
         self.token = Config.TELEGRAM_TOKEN
         self.application = None
@@ -709,12 +951,12 @@ class InstantTelegramBot:
         self.trading_bot = None
     
     async def initialize(self):
-        """Initialize the instant bot"""
+        """Initialize the professional bot"""
         self.application = Application.builder().token(self.token).build()
         self.subscription_manager = SubscriptionManager(Config.DB_PATH)
-        self.trading_bot = InstantTradingBot(self.application)
+        self.trading_bot = ProfessionalTradingBot(self.application)
         
-        # Command handlers - SIMPLIFIED FOR USERS
+        # Command handlers
         self.application.add_handler(CommandHandler("start", self.start_command))
         self.application.add_handler(CommandHandler("help", self.help_command))
         self.application.add_handler(CommandHandler("login", self.login_command))
@@ -724,6 +966,7 @@ class InstantTelegramBot:
         self.application.add_handler(CommandHandler("signals", self.signals_command))
         self.application.add_handler(CommandHandler("contact", self.contact_command))
         self.application.add_handler(CommandHandler("upgrade", self.upgrade_command))
+        self.application.add_handler(CommandHandler("auto", self.auto_command))
         
         # Callback handlers
         self.application.add_handler(CallbackQueryHandler(self.button_handler))
@@ -733,12 +976,14 @@ class InstantTelegramBot:
         
         await self.trading_bot.start_auto_services()
         
-        logger.info("🤖 Instant Signal Trading Bot Initialized!")
+        logger.info("🤖 Professional Auto Signal Trading Bot Initialized!")
 
     async def create_welcome_message(self, user, current_session):
         """Create professional welcome message"""
+        user_plan = self.subscription_manager.get_user_plan(user.id)
+        
         return f"""
-🎯 *LEKZY FX AI PRO* - INSTANT SIGNALS
+🎯 *LEKZY FX AI PRO* - AUTO SIGNAL SYSTEM
 
 *Welcome, {user.first_name}!* 🌟
 
@@ -748,21 +993,27 @@ class InstantTelegramBot:
 {current_session['name']}
 ⏰ *Time:* {current_session['current_time']}
 
-⚡ *Instant Features:*
-• 🚀 Instant Signal Generation
-• ⏱️ 40s Pre-Entry System  
+📊 *Your Account:*
+• Plan: *{user_plan['plan_type']}*
+• Signals Today: *{user_plan['signals_used']}/{user_plan['max_daily_signals']}*
+• Auto Signals: *{'✅ ON' if user_plan['auto_signals_enabled'] else '❌ OFF'}*
+
+⚡ *Professional Features:*
+• 🤖 Auto Signal System
+• ⏱️ 40s Pre-Entry Timing
 • 🕯️ New Candle Based Entries
 • 📢 Session Broadcast Alerts
 
 🎮 *QUICK COMMANDS:*
 
 🚀 */signal* - Get Instant Signal
+🤖 */auto* - Toggle Auto Signals
 🕒 */session* - Market Hours & Status
 📊 */signals* - Recent Trading Signals
 💎 */upgrade* - Premium Plans
 📞 */contact* - Premium Support
 
-*Tap SIGNAL for instant trading!* 🎯
+*Start trading like a pro!* 🚀
 """
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -778,9 +1029,10 @@ class InstantTelegramBot:
         current_session = self.trading_bot.session_manager.get_current_session()
         welcome_message = await self.create_welcome_message(user, current_session)
         
-        # Professional keyboard - SIMPLIFIED
+        # Professional keyboard
         keyboard = [
             [InlineKeyboardButton("🚀 GET INSTANT SIGNAL", callback_data="get_signal")],
+            [InlineKeyboardButton("🤖 TOGGLE AUTO SIGNALS", callback_data="toggle_auto")],
             [InlineKeyboardButton("🕒 MARKET SESSION", callback_data="session")],
             [InlineKeyboardButton("📊 RECENT SIGNALS", callback_data="signals")],
             [InlineKeyboardButton("💎 UPGRADE PLANS", callback_data="upgrade")],
@@ -801,14 +1053,14 @@ class InstantTelegramBot:
 ❓ *LEKZY FX AI PRO - HELP*
 
 🎯 *How It Works:*
-1. Tap *GET SIGNAL* or use /signal
-2. Receive *INSTANT PRE-ENTRY* signal
-3. Get *ENTRY* signal in 40 seconds
-4. Execute trade on *NEW CANDLE*
+1. Use */signal* for instant manual signals
+2. Use */auto* to toggle automatic signals
+3. Receive signals in your allowed sessions
+4. Execute trades on new candle formation
 
-⚡ *Instant Signal System:*
-• 🚀 No delays or cooldowns
-• ⏱️ 40s pre-entry warning
+⚡ *Signal System:*
+• 🤖 Auto Signals (User controlled)
+• ⏱️ 40s pre-entry timing
 • 🕯️ New candle based entries
 • 📊 Professional analysis
 
@@ -822,8 +1074,54 @@ class InstantTelegramBot:
 
 📞 *Support:* @LekzyTradingPro
 
-*Trade instantly with confidence!* 🚀
+*Trade like a professional!* 🚀
 """
+        await update.message.reply_text(message, parse_mode='Markdown')
+
+    async def auto_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /auto command to toggle auto signals"""
+        user = update.effective_user
+        user_plan = self.subscription_manager.get_user_plan(user.id)
+        
+        new_status = self.subscription_manager.toggle_auto_signals(user.id)
+        
+        if new_status:
+            # Start auto signals for user
+            await self.trading_bot.start_user_auto_signals(user.id)
+            message = f"""
+🤖 *AUTO SIGNALS ENABLED* ✅
+
+*Automatic signals are now active for your account!*
+
+📊 *Your Settings:*
+• Plan: *{user_plan['plan_type']}*
+• Daily Limit: *{user_plan['max_daily_signals']} signals*
+• Allowed Sessions: *{', '.join(user_plan['allowed_sessions'])}*
+
+⚡ *How it works:*
+• Signals generated automatically in your sessions
+• You'll receive pre-entry and entry signals
+• Daily limit respected automatically
+• System stops when limit reached
+
+*You will now receive automatic trading signals!* 🚀
+"""
+        else:
+            # Stop auto signals for user
+            await self.trading_bot.stop_user_auto_signals(user.id)
+            message = """
+🤖 *AUTO SIGNALS DISABLED* ❌
+
+*Automatic signals have been turned off.*
+
+💡 *You can still:*
+• Use */signal* for manual signals
+• Re-enable anytime with */auto*
+• Check */session* for market hours
+
+*Auto signals are now disabled.*
+"""
+        
         await update.message.reply_text(message, parse_mode='Markdown')
 
     async def login_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -844,13 +1142,14 @@ class InstantTelegramBot:
             await update.message.reply_text("""
 ✅ *Admin Access Granted!* 👑
 
-*Instant Admin Features:*
+*Professional Admin Features:*
 • 🚀 /signal - Generate instant signals
+• 🤖 System auto signal management
 • 🕒 /session - Market session info
 • 📊 /signals - Signal history
 • 👑 /admin - Admin dashboard
 
-*Instant signal system activated!* ⚡
+*Professional system activated!* ⚡
 """, parse_mode='Markdown')
         else:
             await update.message.reply_text("❌ *Invalid admin token*", parse_mode='Markdown')
@@ -866,43 +1165,44 @@ class InstantTelegramBot:
         with sqlite3.connect(Config.DB_PATH) as conn:
             total_users = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
             total_signals = conn.execute("SELECT COUNT(*) FROM signals").fetchone()[0]
-            user_requests = conn.execute("SELECT COUNT(*) FROM user_requests").fetchone()[0]
+            auto_users = conn.execute("SELECT COUNT(*) FROM subscriptions WHERE auto_signals_enabled = 1").fetchone()[0]
         
         current_session = self.trading_bot.session_manager.get_current_session()
         
         message = f"""
-👑 *INSTANT ADMIN DASHBOARD*
+👑 *PROFESSIONAL ADMIN DASHBOARD*
 
 📊 *System Statistics:*
 • Total Users: {total_users}
 • Total Signals: {total_signals}
-• User Requests: {user_requests}
+• Auto Signal Users: {auto_users}
 • Current Session: {current_session['name']}
 • Time: {current_session['current_time']}
 
-⚡ *Instant Signal Commands:*
-• `/signal` - Instant professional signal
-• `/signal EUR/USD` - Specific pair
+⚡ *Signal Systems:*
+• 🤖 User Auto Signals (Controlled by users)
+• 🚀 System Auto Signals (Always running)
+• 👑 Admin Manual Signals
 
-🎯 *Instant Features:*
-• 🚀 No cooldown for users
-• ⏱️ 40s pre-entry system
-• 🕯️ New candle based entries
-• 📢 Auto-signals in all sessions
+🎯 *Features:*
+• Daily signal limits per user
+• Session-based access control
+• New candle based entries
+• Professional risk management
 
-*Instant system active!* 🚀
+*Professional system active!* 🚀
 """
         keyboard = [
-            [InlineKeyboardButton("🚀 GENERATE INSTANT SIGNAL", callback_data="admin_signal")],
-            [InlineKeyboardButton("🕒 MARKET SESSION", callback_data="session")],
-            [InlineKeyboardButton("📊 SYSTEM STATS", callback_data="admin_stats")]
+            [InlineKeyboardButton("🚀 GENERATE SIGNAL", callback_data="admin_signal")],
+            [InlineKeyboardButton("📊 SYSTEM STATS", callback_data="admin_stats")],
+            [InlineKeyboardButton("🕒 MARKET SESSION", callback_data="session")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
 
     async def signal_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /signal command - INSTANT WITH TIMESTAMPS"""
+        """Handle /signal command - WITH DAILY LIMITS"""
         user = update.effective_user
         is_admin = self.admin_auth.is_admin(user.id)
         
@@ -914,20 +1214,27 @@ class InstantTelegramBot:
             if symbol_arg in valid_pairs:
                 symbol = symbol_arg
         
-        # Generate signal sequence INSTANTLY - NO COOLDOWN
-        await update.message.reply_text("🚀 *Generating instant signal...*", parse_mode='Markdown')
+        # Generate signal sequence
+        await update.message.reply_text("🚀 *Generating professional signal...*", parse_mode='Markdown')
         
         result = await self.trading_bot.generate_signal_sequence(user.id, symbol, is_admin)
+        
+        if result and "error" in result:
+            await update.message.reply_text(f"❌ {result['error']}", parse_mode='Markdown')
+            return
         
         if result and "pre_signal" in result:
             pre_signal = result["pre_signal"]
             analysis = json.loads(pre_signal["analysis"])
             
+            # Get updated user plan
+            user_plan = self.subscription_manager.get_user_plan(user.id)
+            
             # Send pre-entry signal immediately with timestamps
             direction_emoji = "🟢" if pre_signal["direction"] == "BUY" else "🔴"
             
             message = f"""
-🎯 *INSTANT PRE-ENTRY SIGNAL* ⚡
+🎯 *PROFESSIONAL PRE-ENTRY SIGNAL* ⚡
 
 {direction_emoji} *{pre_signal['symbol']}* | **{pre_signal['direction']}**
 💵 *Expected Entry:* `{pre_signal['entry_price']:.5f}`
@@ -944,10 +1251,9 @@ class InstantTelegramBot:
 • Momentum: {analysis['momentum']}
 • Risk: {analysis['risk_rating']}
 
-💡 *Market Condition:*
-{analysis['market_condition']}
-
-🕯️ *Entry Type:* NEW CANDLE CONFIRMATION
+📈 *Your Account:*
+• Signals Today: *{user_plan['signals_used']}/{user_plan['max_daily_signals']}*
+• Auto Signals: *{'✅ ON' if user_plan['auto_signals_enabled'] else '❌ OFF'}*
 
 ⏰ *Entry signal coming in {Config.PRE_ENTRY_DELAY} seconds...*
 """
@@ -959,7 +1265,8 @@ class InstantTelegramBot:
             entry_signal = await self.trading_bot.generate_entry_signal(pre_signal["signal_id"])
             
             if entry_signal:
-                entry_analysis = json.loads(entry_signal["analysis"])
+                # Get final user plan
+                final_user_plan = self.subscription_manager.get_user_plan(user.id)
                 
                 entry_message = f"""
 🎯 *ENTRY SIGNAL* ✅
@@ -977,17 +1284,21 @@ class InstantTelegramBot:
 • Risk/Reward: *1:{entry_signal['risk_reward']}* ⚖️
 • Type: *PROFESSIONAL* 💎
 
+📊 *Your Account:*
+• Signals Remaining: *{final_user_plan['signals_remaining']}*
+• Auto Signals: *{'✅ ON' if final_user_plan['auto_signals_enabled'] else '❌ OFF'}*
+
 ⚡ *Execution Confirmed:*
 • ✅ New candle confirmed
 • ✅ Optimal entry level
 • ✅ Professional setup
-• ✅ Timing aligned
 
 *Execute this trade on new candle formation!* 🚀
 """
                 keyboard = [
                     [InlineKeyboardButton("✅ TRADE EXECUTED", callback_data="trade_done")],
-                    [InlineKeyboardButton("🔄 NEW INSTANT SIGNAL", callback_data="get_signal")]
+                    [InlineKeyboardButton("🔄 NEW SIGNAL", callback_data="get_signal")],
+                    [InlineKeyboardButton("🤖 AUTO SIGNALS", callback_data="toggle_auto")]
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 
@@ -995,10 +1306,10 @@ class InstantTelegramBot:
             else:
                 await update.message.reply_text("❌ Failed to generate entry signal")
         else:
-            await update.message.reply_text("❌ Signal generation failed. Try again.")
+            await update.message.reply_text("❌ Signal generation failed. Please try again.")
 
     async def session_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /session command with professional design"""
+        """Handle /session command"""
         session = self.trading_bot.session_manager.get_current_session()
         next_session = self.trading_bot.session_manager.get_next_session()
         
@@ -1039,13 +1350,13 @@ class InstantTelegramBot:
 🎯 *Accuracy:* {session['accuracy']}%
 💎 *Optimal Pairs:* {', '.join(session['optimal_pairs'])}
 
-⚡ *Instant Signals Active:*
-• 🚀 Instant user signals
+⚡ *Signal Systems Active:*
+• 🤖 User Auto Signals
+• 🚀 System Auto Signals
 • ⏱️ 40s pre-entry system
 • 🕯️ New candle based entries
-• 🤖 Auto-signals running
 
-*Instant trading active!* 🚀
+*Professional trading active!* 🚀
 """
         
         await update.message.reply_text(message, parse_mode='Markdown')
@@ -1064,18 +1375,23 @@ class InstantTelegramBot:
             await update.message.reply_text("📭 No signals yet. Market may be closed or starting soon!")
             return
         
-        message = "📡 *RECENT INSTANT SIGNALS*\n\n"
+        message = "📡 *RECENT PROFESSIONAL SIGNALS*\n\n"
         
         for symbol, signal_type, direction, entry, confidence, requested_by, created in signals:
             time_str = datetime.fromisoformat(created).strftime("%H:%M")
             type_emoji = "📊" if signal_type == "PRE_ENTRY" else "🎯"
             dir_emoji = "🟢" if direction == "BUY" else "🔴"
-            admin_badge = " 👑" if requested_by == "ADMIN" else ""
+            request_type = {
+                "ADMIN": "👑",
+                "USER": "👤", 
+                "AUTO": "🤖",
+                "SYSTEM_AUTO": "⚡"
+            }.get(requested_by, "👤")
             
-            message += f"{type_emoji} {dir_emoji} {symbol}{admin_badge}\n"
+            message += f"{type_emoji} {dir_emoji} {symbol} {request_type}\n"
             message += f"💵 {entry} | {confidence*100:.1f}% | {time_str}\n\n"
         
-        message += "⚡ *Instant 40s pre-entry system active!*\n"
+        message += "⚡ *Professional signal system active!*\n"
         message += "🕯️ *All entries based on new candle confirmation*"
         
         await update.message.reply_text(message, parse_mode='Markdown')
@@ -1083,12 +1399,13 @@ class InstantTelegramBot:
     async def contact_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /contact command"""
         message = f"""
-📞 *INSTANT SUPPORT*
+📞 *PROFESSIONAL SUPPORT*
 
 *Contact Admin:* {Config.ADMIN_CONTACT}
 
 💎 *Premium Features:*
 • 24/7 Signal Access
+• Unlimited Auto Signals
 • Priority Execution
 • Higher Accuracy
 • Personal Support
@@ -1099,12 +1416,12 @@ class InstantTelegramBot:
 • VIP - $99/month
 • PREMIUM - $199/month
 
-*Message for instant trading!* 💎
+*Message for professional trading!* 💎
 """
         keyboard = [
             [InlineKeyboardButton("📱 MESSAGE ADMIN", url=f"https://t.me/{Config.ADMIN_CONTACT.replace('@', '')}")],
             [InlineKeyboardButton("💎 UPGRADE PLANS", callback_data="upgrade")],
-            [InlineKeyboardButton("🚀 GET INSTANT SIGNAL", callback_data="get_signal")]
+            [InlineKeyboardButton("🚀 GET SIGNAL", callback_data="get_signal")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -1121,20 +1438,20 @@ class InstantTelegramBot:
 
 🌅 *BASIC* - $19/month
 • Morning Session Access
-• Instant Signals
 • 10 Signals/Day
+• Auto Signals Enabled
 • 95%+ Accuracy
 
 🌇 *PRO* - $49/month  
 • Morning + Evening Sessions
-• Enhanced Analysis
 • 25 Signals/Day
+• Enhanced Auto Signals
 • 96%+ Accuracy
 
 🌃 *VIP* - $99/month
 • All Sessions (24/7)
-• Priority Signals
 • 50 Signals/Day
+• Priority Auto Signals
 • 97%+ Accuracy
 
 🌟 *PREMIUM* - $199/month
@@ -1153,7 +1470,7 @@ class InstantTelegramBot:
 """
         keyboard = [
             [InlineKeyboardButton("📞 CONTACT ADMIN", callback_data="contact")],
-            [InlineKeyboardButton("🚀 GET INSTANT SIGNAL", callback_data="get_signal")]
+            [InlineKeyboardButton("🚀 GET SIGNAL", callback_data="get_signal")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -1168,6 +1485,8 @@ class InstantTelegramBot:
         
         if query.data == "get_signal":
             await self.signal_command(update, context)
+        elif query.data == "toggle_auto":
+            await self.auto_command(update, context)
         elif query.data == "session":
             await self.session_command(update, context)
         elif query.data == "signals":
@@ -1209,11 +1528,11 @@ class MainApp:
         initialize_database()
         start_web_server()
         
-        self.bot = InstantTelegramBot()
+        self.bot = ProfessionalTelegramBot()
         await self.bot.initialize()
         
         self.running = True
-        logger.info("🚀 LEKZY FX AI PRO - Instant Signal System Started")
+        logger.info("🚀 LEKZY FX AI PRO - Professional Auto Signal System Started")
     
     async def run(self):
         """Run application"""
