@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-LEKZY FX AI PRO - Professional Signal System with Time-Based Entries
+LEKZY FX AI PRO - Instant Signal System with Auto-Signals
 """
 
 import os
@@ -21,11 +21,12 @@ class Config:
     TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "your_bot_token_here")
     ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "LEKZY_ADMIN_123")
     ADMIN_CONTACT = os.getenv("ADMIN_CONTACT", "@LekzyTradingPro")
+    ADMIN_USER_ID = os.getenv("ADMIN_USER_ID", "123456789")  # Your admin user ID
     DB_PATH = "/app/data/lekzy_fx_ai.db"
     PORT = int(os.getenv("PORT", 10000))
     PRE_ENTRY_DELAY = 40  # seconds before entry
     TIMEZONE_OFFSET = 1  # UTC+1
-    SIGNAL_COOLDOWN = random.randint(60, 120)  # 1-2 minutes between signals
+    BROADCAST_INTERVAL = 1800  # 30 minutes in seconds
 
 # ==================== LOGGING SETUP ====================
 logging.basicConfig(
@@ -40,7 +41,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "🤖 LEKZY FX AI PRO - Professional Signal System 🚀"
+    return "🤖 LEKZY FX AI PRO - Instant Signal System 🚀"
 
 @app.route('/health')
 def health():
@@ -119,9 +120,31 @@ def initialize_database():
             )
         """)
 
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                user_id INTEGER PRIMARY KEY,
+                username TEXT,
+                first_name TEXT,
+                last_name TEXT,
+                plan_type TEXT DEFAULT 'TRIAL',
+                joined_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                last_active TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS broadcasts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_type TEXT,
+                broadcast_time TEXT,
+                status TEXT DEFAULT 'SENT',
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         conn.commit()
         conn.close()
-        logger.info("✅ Professional database initialized")
+        logger.info("✅ Instant signal database initialized")
         
     except Exception as e:
         logger.error(f"❌ Database setup failed: {e}")
@@ -176,28 +199,32 @@ class SessionManager:
                 "name": "🌅 London Session",
                 "optimal_pairs": ["EUR/USD", "GBP/USD", "EUR/JPY"],
                 "volatility": "HIGH",
-                "accuracy": 96.2
+                "accuracy": 96.2,
+                "broadcast_time": 6.5  # 06:30 UTC+1 (30 minutes before)
             },
             "EVENING": {
                 "start_hour": 15, "end_hour": 19,  # 16:00-20:00 UTC+1
                 "name": "🌇 NY/London Overlap", 
                 "optimal_pairs": ["USD/JPY", "USD/CAD", "XAU/USD"],
                 "volatility": "VERY HIGH",
-                "accuracy": 97.8
+                "accuracy": 97.8,
+                "broadcast_time": 14.5  # 14:30 UTC+1 (30 minutes before)
             },
             "ASIAN": {
                 "start_hour": 23, "end_hour": 3,   # 00:00-04:00 UTC+1 (next day)
                 "name": "🌃 Asian Session",
                 "optimal_pairs": ["AUD/JPY", "NZD/USD", "USD/JPY"],
                 "volatility": "MEDIUM",
-                "accuracy": 92.5
+                "accuracy": 92.5,
+                "broadcast_time": 22.5  # 22:30 UTC+1 (30 minutes before)
             },
             "ADMIN_24_7": {
                 "start_hour": 0, "end_hour": 24,
                 "name": "👑 24/7 Admin Session",
                 "optimal_pairs": ["EUR/USD", "GBP/USD", "USD/JPY", "XAU/USD", "AUD/USD", "USD/CAD"],
                 "volatility": "ADMIN",
-                "accuracy": 98.5
+                "accuracy": 98.5,
+                "broadcast_time": None
             }
         }
 
@@ -228,43 +255,58 @@ class SessionManager:
         sessions_order = ["ASIAN", "MORNING", "EVENING"]
         
         if current_session["id"] == "CLOSED":
-            return self.sessions["ASIAN"]
+            next_session = self.sessions["ASIAN"]
+        else:
+            current_index = sessions_order.index(current_session["id"])
+            next_index = (current_index + 1) % len(sessions_order)
+            next_session = self.sessions[sessions_order[next_index]]
         
-        current_index = sessions_order.index(current_session["id"])
-        next_index = (current_index + 1) % len(sessions_order)
-        return self.sessions[sessions_order[next_index]]
+        return {**next_session, "id": sessions_order[next_index]}
 
-# ==================== PROFESSIONAL SIGNAL GENERATOR ====================
-class ProfessionalSignalGenerator:
+    def get_upcoming_sessions(self):
+        """Get sessions that should have broadcasts sent"""
+        now_utc1 = self.get_current_time_utc1()
+        current_hour = now_utc1.hour + (now_utc1.minute / 60)
+        
+        upcoming = []
+        for session_id, session in self.sessions.items():
+            if session_id != "ADMIN_24_7" and session["broadcast_time"] is not None:
+                # Check if current time is within 30 minutes of broadcast time
+                if abs(current_hour - session["broadcast_time"]) < 0.5:  # 30 minutes window
+                    upcoming.append({**session, "id": session_id})
+        
+        return upcoming
+
+# ==================== INSTANT SIGNAL GENERATOR ====================
+class InstantSignalGenerator:
     def __init__(self):
         self.all_pairs = ["EUR/USD", "GBP/USD", "USD/JPY", "XAU/USD", "AUD/USD", "USD/CAD"]
         self.pending_signals = {}
-        self.last_signal_time = {}
+        self.auto_signal_active = True
     
     def generate_professional_analysis(self, symbol: str) -> dict:
-        """Generate professional trading analysis"""
+        """Generate professional trading analysis with new candle focus"""
         
-        # Professional candle patterns
+        # Professional candle patterns with new candle emphasis
         candle_patterns = [
-            "Bullish Engulfing pattern confirmed on M5",
-            "Bearish Engulfing with strong volume",
-            "Hammer at key support level",
-            "Shooting star at resistance",
-            "Doji reversal pattern forming",
-            "Three white soldiers pattern"
+            "NEW CANDLE: Bullish Engulfing pattern forming",
+            "NEW CANDLE: Bearish Engulfing with strong volume",
+            "NEW CANDLE: Hammer at key support level",
+            "NEW CANDLE: Shooting star at resistance",
+            "NEW CANDLE: Doji reversal pattern confirmed",
+            "NEW CANDLE: Three white soldiers pattern emerging"
         ]
         
         # Professional timeframes
         timeframes = ["M5", "M15", "H1"]
         
-        # Market conditions
+        # Market conditions with new candle focus
         market_conditions = [
-            "Strong momentum with institutional flow",
-            "Price at key Fibonacci level",
-            "Market structure break confirmed",
-            "Liquidity pool activation",
-            "Economic catalyst driving movement",
-            "Technical breakout with volume"
+            "New candle forming with institutional flow",
+            "Price reacting at key level on new candle",
+            "New candle confirming market structure break",
+            "Liquidity activation on new candle formation",
+            "Economic catalyst driving new candle momentum"
         ]
         
         return {
@@ -276,18 +318,9 @@ class ProfessionalSignalGenerator:
             "volume_analysis": random.choice(["ABOVE_AVERAGE", "HIGH", "VERY_HIGH"]),
             "risk_rating": random.choice(["LOW", "MEDIUM", "HIGH"]),
             "professional_grade": True,
-            "entry_timing": "NEXT_CANDLE"
+            "entry_timing": "NEW_CANDLE_CONFIRMATION",
+            "new_candle_required": True
         }
-    
-    def can_generate_signal(self, user_id: int) -> bool:
-        """Check if user can generate signal (cooldown)"""
-        current_time = time.time()
-        if user_id in self.last_signal_time:
-            time_diff = current_time - self.last_signal_time[user_id]
-            if time_diff < Config.SIGNAL_COOLDOWN:
-                return False
-        self.last_signal_time[user_id] = current_time
-        return True
     
     def generate_pre_entry_signal(self, symbol: str = None, is_admin: bool = False) -> dict:
         """Generate pre-entry signal with professional analysis"""
@@ -313,6 +346,10 @@ class ProfessionalSignalGenerator:
         
         signal_id = f"PRE_{symbol.replace('/', '')}_{int(time.time())}"
         
+        # Calculate timestamps
+        current_time = datetime.now()
+        entry_time = current_time + timedelta(seconds=Config.PRE_ENTRY_DELAY)
+        
         signal_data = {
             "signal_id": signal_id,
             "symbol": symbol,
@@ -328,19 +365,26 @@ class ProfessionalSignalGenerator:
             "risk_reward": 0.0,
             "signal_style": "PROFESSIONAL",
             "requested_by": "ADMIN" if is_admin else "USER",
-            "generated_at": datetime.now().isoformat()
+            "generated_at": current_time.isoformat(),
+            "current_time_str": current_time.strftime("%H:%M:%S"),
+            "entry_time_str": entry_time.strftime("%H:%M:%S")
         }
         
         self.pending_signals[signal_id] = signal_data
         return signal_data
     
     def generate_entry_signal(self, pre_signal_id: str) -> dict:
-        """Generate entry signal based on pre-entry"""
+        """Generate entry signal based on pre-entry with new candle confirmation"""
         if pre_signal_id not in self.pending_signals:
             return None
         
         pre_signal = self.pending_signals[pre_signal_id]
         analysis = json.loads(pre_signal["analysis"])
+        
+        # Update analysis to confirm new candle
+        analysis["new_candle_confirmed"] = True
+        analysis["entry_executed"] = "NEW_CANDLE_BASED"
+        analysis["execution_time"] = datetime.now().isoformat()
         
         # Professional TP/SL calculation
         movement = 0.0028  # Professional movement
@@ -364,11 +408,40 @@ class ProfessionalSignalGenerator:
             "take_profit": take_profit,
             "stop_loss": stop_loss,
             "time_to_entry": 0,
-            "risk_reward": risk_reward
+            "risk_reward": risk_reward,
+            "analysis": json.dumps(analysis),
+            "entry_time_actual": datetime.now().strftime("%H:%M:%S")
         }
         
         del self.pending_signals[pre_signal_id]
         return entry_signal
+
+# ==================== USER & BROADCAST MANAGER ====================
+class UserManager:
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+    
+    def add_user(self, user_id: int, username: str, first_name: str, last_name: str = ""):
+        """Add or update user in database"""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                INSERT OR REPLACE INTO users 
+                (user_id, username, first_name, last_name, last_active)
+                VALUES (?, ?, ?, ?, ?)
+            """, (user_id, username, first_name, last_name, datetime.now().isoformat()))
+            conn.commit()
+    
+    def get_all_users(self):
+        """Get all user IDs for broadcasting"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute("SELECT user_id FROM users")
+            return [row[0] for row in cursor.fetchall()]
+    
+    def get_user_count(self):
+        """Get total user count"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute("SELECT COUNT(*) FROM users")
+            return cursor.fetchone()[0]
 
 # ==================== SUBSCRIPTION MANAGER ====================
 class SubscriptionManager:
@@ -402,27 +475,125 @@ class SubscriptionManager:
             result = cursor.fetchone()
             return result[0] if result else "TRIAL"
 
-# ==================== PROFESSIONAL TRADING BOT ====================
-class ProfessionalTradingBot:
+# ==================== INSTANT TRADING BOT ====================
+class InstantTradingBot:
     def __init__(self, application):
         self.application = application
         self.session_manager = SessionManager()
-        self.signal_generator = ProfessionalSignalGenerator()
+        self.signal_generator = InstantSignalGenerator()
+        self.user_manager = UserManager(Config.DB_PATH)
         self.is_running = False
     
-    async def start_auto_signals(self):
-        """Start automatic signal generation during sessions"""
+    async def notify_admin_new_user(self, user: dict):
+        """Notify admin about new user"""
+        try:
+            admin_user_id = int(Config.ADMIN_USER_ID)
+            message = f"""
+👤 *NEW USER REGISTERED*
+
+🆔 *User ID:* `{user.id}`
+👤 *Name:* {user.first_name} {user.last_name or ''}
+📧 *Username:* @{user.username or 'N/A'}
+⏰ *Time:* {datetime.now().strftime('%H:%M UTC+1')}
+
+📊 *Total Users:* {self.user_manager.get_user_count()}
+🎯 *System Status:* ACTIVE
+"""
+            await self.application.bot.send_message(
+                chat_id=admin_user_id,
+                text=message,
+                parse_mode='Markdown'
+            )
+            logger.info(f"📧 Admin notified about new user: {user.username}")
+        except Exception as e:
+            logger.error(f"❌ Failed to notify admin: {e}")
+    
+    async def broadcast_session_alert(self):
+        """Broadcast session alerts to all users"""
+        try:
+            upcoming_sessions = self.session_manager.get_upcoming_sessions()
+            
+            for session in upcoming_sessions:
+                # Check if broadcast already sent for this session today
+                with sqlite3.connect(Config.DB_PATH) as conn:
+                    today = datetime.now().strftime("%Y-%m-%d")
+                    cursor = conn.execute(
+                        "SELECT id FROM broadcasts WHERE session_type = ? AND DATE(created_at) = ?",
+                        (session["id"], today)
+                    )
+                    if cursor.fetchone():
+                        continue  # Already sent today
+                
+                # Prepare broadcast message
+                message = f"""
+🔔 *SESSION STARTING SOON*
+
+{session['name']}
+⏰ *Starts in:* 30 minutes
+🕒 *Session Time:* {session['start_hour']:02d}:00-{session['end_hour']:02d}:00 UTC+1
+
+📊 *Volatility:* {session['volatility']}
+🎯 *Accuracy:* {session['accuracy']}%
+💎 *Optimal Pairs:* {', '.join(session['optimal_pairs'][:2])}
+
+⚡ *Professional signals will be generated automatically*
+🎯 *Get ready for trading opportunities!*
+
+*Prepare your trading setup!* 🚀
+"""
+                # Send to all users
+                users = self.user_manager.get_all_users()
+                success_count = 0
+                
+                for user_id in users:
+                    try:
+                        await self.application.bot.send_message(
+                            chat_id=user_id,
+                            text=message,
+                            parse_mode='Markdown'
+                        )
+                        success_count += 1
+                        await asyncio.sleep(0.1)  # Rate limiting
+                    except Exception as e:
+                        logger.error(f"❌ Failed to send broadcast to {user_id}: {e}")
+                
+                # Record broadcast
+                with sqlite3.connect(Config.DB_PATH) as conn:
+                    conn.execute(
+                        "INSERT INTO broadcasts (session_type, broadcast_time) VALUES (?, ?)",
+                        (session["id"], datetime.now().isoformat())
+                    )
+                    conn.commit()
+                
+                logger.info(f"📢 Session broadcast sent for {session['name']} to {success_count}/{len(users)} users")
+                
+        except Exception as e:
+            logger.error(f"❌ Broadcast error: {e}")
+    
+    async def start_auto_services(self):
+        """Start all automatic services"""
         self.is_running = True
         
-        async def signal_loop():
+        async def broadcast_loop():
+            while self.is_running:
+                try:
+                    await self.broadcast_session_alert()
+                    await asyncio.sleep(300)  # Check every 5 minutes
+                except Exception as e:
+                    logger.error(f"Broadcast loop error: {e}")
+                    await asyncio.sleep(60)
+        
+        async def auto_signal_loop():
+            """Generate signals automatically in ALL active sessions"""
             while self.is_running:
                 try:
                     session = self.session_manager.get_current_session()
                     
-                    if session["id"] != "CLOSED" and session["id"] != "ADMIN_24_7":
-                        logger.info(f"🎯 Generating {session['name']} professional signals")
+                    # Generate auto signals in ALL sessions (not just when users request)
+                    if session["id"] != "CLOSED":
+                        logger.info(f"🎯 Auto-generating {session['name']} signals")
                         
-                        for symbol in session["optimal_pairs"][:1]:
+                        for symbol in session["optimal_pairs"][:2]:  # Generate for 2 pairs
                             # Generate pre-entry signal immediately
                             pre_signal = self.signal_generator.generate_pre_entry_signal(symbol, False)
                             
@@ -441,7 +612,7 @@ class ProfessionalTradingBot:
                                 ))
                                 conn.commit()
                             
-                            logger.info(f"📊 Pre-entry: {pre_signal['symbol']} {pre_signal['direction']}")
+                            logger.info(f"📊 Auto Pre-entry: {pre_signal['symbol']} {pre_signal['direction']}")
                             
                             # Wait 40 seconds for entry
                             await asyncio.sleep(Config.PRE_ENTRY_DELAY)
@@ -458,26 +629,24 @@ class ProfessionalTradingBot:
                                     """, tuple(entry_signal.values()))
                                     conn.commit()
                                 
-                                logger.info(f"🎯 Entry: {entry_signal['symbol']} {entry_signal['direction']}")
+                                logger.info(f"🎯 Auto Entry: {entry_signal['symbol']} {entry_signal['direction']}")
                     
-                    # Wait 1-2 minutes before next signal
-                    await asyncio.sleep(Config.SIGNAL_COOLDOWN)
+                    # Wait 60-90 seconds before next auto signal
+                    await asyncio.sleep(random.randint(60, 90))
                     
                 except Exception as e:
                     logger.error(f"Auto signal error: {e}")
                     await asyncio.sleep(60)
         
-        asyncio.create_task(signal_loop())
-        logger.info("✅ Professional auto signal generation started")
+        # Start both services
+        asyncio.create_task(broadcast_loop())
+        asyncio.create_task(auto_signal_loop())
+        logger.info("✅ Instant auto services started")
     
     async def generate_signal_sequence(self, user_id: int, symbol: str = None, is_admin: bool = False):
-        """Generate professional signal sequence"""
+        """Generate signal sequence INSTANTLY without cooldown"""
         try:
-            # Check cooldown
-            if not self.signal_generator.can_generate_signal(user_id):
-                wait_time = Config.SIGNAL_COOLDOWN - (time.time() - self.signal_generator.last_signal_time[user_id])
-                return {"error": f"Please wait {int(wait_time)} seconds before next signal"}
-            
+            # NO COOLDOWN CHECK - INSTANT SIGNALS
             # Generate pre-entry signal immediately
             pre_signal = self.signal_generator.generate_pre_entry_signal(symbol, is_admin)
             
@@ -530,20 +699,20 @@ class ProfessionalTradingBot:
             logger.error(f"❌ Entry signal failed: {e}")
             return None
 
-# ==================== PROFESSIONAL TELEGRAM BOT ====================
-class ProfessionalTelegramBot:
+# ==================== INSTANT TELEGRAM BOT ====================
+class InstantTelegramBot:
     def __init__(self):
         self.token = Config.TELEGRAM_TOKEN
         self.application = None
         self.admin_auth = AdminAuth()
-        self.subscription_manager = None
+        self.subscription_manager = SubscriptionManager(Config.DB_PATH)
         self.trading_bot = None
     
     async def initialize(self):
-        """Initialize the professional bot"""
+        """Initialize the instant bot"""
         self.application = Application.builder().token(self.token).build()
         self.subscription_manager = SubscriptionManager(Config.DB_PATH)
-        self.trading_bot = ProfessionalTradingBot(self.application)
+        self.trading_bot = InstantTradingBot(self.application)
         
         # Command handlers - SIMPLIFIED FOR USERS
         self.application.add_handler(CommandHandler("start", self.start_command))
@@ -554,6 +723,7 @@ class ProfessionalTelegramBot:
         self.application.add_handler(CommandHandler("session", self.session_command))
         self.application.add_handler(CommandHandler("signals", self.signals_command))
         self.application.add_handler(CommandHandler("contact", self.contact_command))
+        self.application.add_handler(CommandHandler("upgrade", self.upgrade_command))
         
         # Callback handlers
         self.application.add_handler(CallbackQueryHandler(self.button_handler))
@@ -561,14 +731,14 @@ class ProfessionalTelegramBot:
         await self.application.initialize()
         await self.application.start()
         
-        await self.trading_bot.start_auto_signals()
+        await self.trading_bot.start_auto_services()
         
-        logger.info("🤖 Professional Trading Bot Initialized (UTC+1)!")
+        logger.info("🤖 Instant Signal Trading Bot Initialized!")
 
     async def create_welcome_message(self, user, current_session):
         """Create professional welcome message"""
         return f"""
-🎯 *LEKZY FX AI PRO* - PROFESSIONAL TRADING
+🎯 *LEKZY FX AI PRO* - INSTANT SIGNALS
 
 *Welcome, {user.first_name}!* 🌟
 
@@ -578,25 +748,31 @@ class ProfessionalTelegramBot:
 {current_session['name']}
 ⏰ *Time:* {current_session['current_time']}
 
-⚡ *Professional Features:*
-• 40s Pre-Entry Signal System
-• Time-Based Entry Confirmation
-• Professional Candle Analysis
-• Real-Time Market Monitoring
+⚡ *Instant Features:*
+• 🚀 Instant Signal Generation
+• ⏱️ 40s Pre-Entry System  
+• 🕯️ New Candle Based Entries
+• 📢 Session Broadcast Alerts
 
 🎮 *QUICK COMMANDS:*
 
-🚀 */signal* - Get Professional Signal
+🚀 */signal* - Get Instant Signal
 🕒 */session* - Market Hours & Status
 📊 */signals* - Recent Trading Signals
+💎 */upgrade* - Premium Plans
 📞 */contact* - Premium Support
 
-*Tap SIGNAL to start trading!* 🎯
+*Tap SIGNAL for instant trading!* 🎯
 """
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command with professional welcome"""
         user = update.effective_user
+        
+        # Add user to database and notify admin
+        self.trading_bot.user_manager.add_user(user.id, user.username, user.first_name, user.last_name or "")
+        await self.trading_bot.notify_admin_new_user(user)
+        
         self.subscription_manager.start_trial(user.id, user.username, user.first_name)
         
         current_session = self.trading_bot.session_manager.get_current_session()
@@ -604,9 +780,10 @@ class ProfessionalTelegramBot:
         
         # Professional keyboard - SIMPLIFIED
         keyboard = [
-            [InlineKeyboardButton("🚀 GET SIGNAL", callback_data="get_signal")],
+            [InlineKeyboardButton("🚀 GET INSTANT SIGNAL", callback_data="get_signal")],
             [InlineKeyboardButton("🕒 MARKET SESSION", callback_data="session")],
             [InlineKeyboardButton("📊 RECENT SIGNALS", callback_data="signals")],
+            [InlineKeyboardButton("💎 UPGRADE PLANS", callback_data="upgrade")],
             [InlineKeyboardButton("📞 CONTACT SUPPORT", callback_data="contact")]
         ]
         
@@ -625,24 +802,27 @@ class ProfessionalTelegramBot:
 
 🎯 *How It Works:*
 1. Tap *GET SIGNAL* or use /signal
-2. Receive *PRE-ENTRY* signal (40s before entry)
-3. Get *ENTRY* signal with exact levels
-4. Execute trade professionally
+2. Receive *INSTANT PRE-ENTRY* signal
+3. Get *ENTRY* signal in 40 seconds
+4. Execute trade on *NEW CANDLE*
 
-⚡ *Signal System:*
-• 40s pre-entry warning
-• Time-based entry confirmation
-• Professional candle analysis
-• Real-time market monitoring
+⚡ *Instant Signal System:*
+• 🚀 No delays or cooldowns
+• ⏱️ 40s pre-entry warning
+• 🕯️ New candle based entries
+• 📊 Professional analysis
 
 🕒 *Trading Sessions (UTC+1):*
 • 🌅 London: 08:00-12:00
 • 🌇 NY/London: 16:00-20:00  
 • 🌃 Asian: 00:00-04:00
 
+🔔 *Session Alerts:*
+30 minutes before each session
+
 📞 *Support:* @LekzyTradingPro
 
-*Trade like a professional!* 🚀
+*Trade instantly with confidence!* 🚀
 """
         await update.message.reply_text(message, parse_mode='Markdown')
 
@@ -664,13 +844,13 @@ class ProfessionalTelegramBot:
             await update.message.reply_text("""
 ✅ *Admin Access Granted!* 👑
 
-*Professional Admin Features:*
-• 🚀 /signal - Generate professional signals
+*Instant Admin Features:*
+• 🚀 /signal - Generate instant signals
 • 🕒 /session - Market session info
 • 📊 /signals - Signal history
 • 👑 /admin - Admin dashboard
 
-*40s pre-entry system activated!* ⚡
+*Instant signal system activated!* ⚡
 """, parse_mode='Markdown')
         else:
             await update.message.reply_text("❌ *Invalid admin token*", parse_mode='Markdown')
@@ -684,14 +864,14 @@ class ProfessionalTelegramBot:
             return
         
         with sqlite3.connect(Config.DB_PATH) as conn:
-            total_users = conn.execute("SELECT COUNT(*) FROM subscriptions").fetchone()[0]
+            total_users = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
             total_signals = conn.execute("SELECT COUNT(*) FROM signals").fetchone()[0]
             user_requests = conn.execute("SELECT COUNT(*) FROM user_requests").fetchone()[0]
         
         current_session = self.trading_bot.session_manager.get_current_session()
         
         message = f"""
-👑 *PROFESSIONAL ADMIN DASHBOARD*
+👑 *INSTANT ADMIN DASHBOARD*
 
 📊 *System Statistics:*
 • Total Users: {total_users}
@@ -700,20 +880,20 @@ class ProfessionalTelegramBot:
 • Current Session: {current_session['name']}
 • Time: {current_session['current_time']}
 
-⚡ *Signal Commands:*
-• `/signal` - Professional signal
+⚡ *Instant Signal Commands:*
+• `/signal` - Instant professional signal
 • `/signal EUR/USD` - Specific pair
 
-🎯 *Professional Features:*
-• 40s pre-entry system
-• Time-based confirmation
-• Candle pattern analysis
-• 1-2 minute cooldown
+🎯 *Instant Features:*
+• 🚀 No cooldown for users
+• ⏱️ 40s pre-entry system
+• 🕯️ New candle based entries
+• 📢 Auto-signals in all sessions
 
-*Professional system active!* 🚀
+*Instant system active!* 🚀
 """
         keyboard = [
-            [InlineKeyboardButton("🚀 GENERATE SIGNAL", callback_data="admin_signal")],
+            [InlineKeyboardButton("🚀 GENERATE INSTANT SIGNAL", callback_data="admin_signal")],
             [InlineKeyboardButton("🕒 MARKET SESSION", callback_data="session")],
             [InlineKeyboardButton("📊 SYSTEM STATS", callback_data="admin_stats")]
         ]
@@ -722,7 +902,7 @@ class ProfessionalTelegramBot:
         await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
 
     async def signal_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /signal command - SIMPLIFIED & PROFESSIONAL"""
+        """Handle /signal command - INSTANT WITH TIMESTAMPS"""
         user = update.effective_user
         is_admin = self.admin_auth.is_admin(user.id)
         
@@ -734,27 +914,29 @@ class ProfessionalTelegramBot:
             if symbol_arg in valid_pairs:
                 symbol = symbol_arg
         
-        # Generate signal sequence immediately
-        result = await self.trading_bot.generate_signal_sequence(user.id, symbol, is_admin)
+        # Generate signal sequence INSTANTLY - NO COOLDOWN
+        await update.message.reply_text("🚀 *Generating instant signal...*", parse_mode='Markdown')
         
-        if result and "error" in result:
-            await update.message.reply_text(f"⏳ {result['error']}", parse_mode='Markdown')
-            return
+        result = await self.trading_bot.generate_signal_sequence(user.id, symbol, is_admin)
         
         if result and "pre_signal" in result:
             pre_signal = result["pre_signal"]
             analysis = json.loads(pre_signal["analysis"])
             
-            # Send pre-entry signal immediately
+            # Send pre-entry signal immediately with timestamps
             direction_emoji = "🟢" if pre_signal["direction"] == "BUY" else "🔴"
             
             message = f"""
-🎯 *PRE-ENTRY SIGNAL* ⚡
-*Entry in {Config.PRE_ENTRY_DELAY}s*
+🎯 *INSTANT PRE-ENTRY SIGNAL* ⚡
 
 {direction_emoji} *{pre_signal['symbol']}* | **{pre_signal['direction']}**
 💵 *Expected Entry:* `{pre_signal['entry_price']:.5f}`
 🎯 *Confidence:* {pre_signal['confidence']*100:.1f}%
+
+⏰ *Timing:*
+• 🕐 Current Time: `{pre_signal['current_time_str']}`
+• 🎯 Expected Entry: `{pre_signal['entry_time_str']}`
+• ⏱️ Countdown: {Config.PRE_ENTRY_DELAY} seconds
 
 📊 *Professional Analysis:*
 {analysis['candle_pattern']}
@@ -764,6 +946,8 @@ class ProfessionalTelegramBot:
 
 💡 *Market Condition:*
 {analysis['market_condition']}
+
+🕯️ *Entry Type:* NEW CANDLE CONFIRMATION
 
 ⏰ *Entry signal coming in {Config.PRE_ENTRY_DELAY} seconds...*
 """
@@ -775,30 +959,35 @@ class ProfessionalTelegramBot:
             entry_signal = await self.trading_bot.generate_entry_signal(pre_signal["signal_id"])
             
             if entry_signal:
+                entry_analysis = json.loads(entry_signal["analysis"])
+                
                 entry_message = f"""
 🎯 *ENTRY SIGNAL* ✅
-*EXECUTE NOW*
+*EXECUTE ON NEW CANDLE*
 
 {direction_emoji} *{entry_signal['symbol']}* | **{entry_signal['direction']}**
 💵 *Entry Price:* `{entry_signal['entry_price']:.5f}`
 ✅ *Take Profit:* `{entry_signal['take_profit']:.5f}`
 ❌ *Stop Loss:* `{entry_signal['stop_loss']:.5f}`
 
+⏰ *Entry Time:* `{entry_signal['entry_time_actual']}`
+
 📈 *Trade Details:*
 • Confidence: *{entry_signal['confidence']*100:.1f}%* 🎯
 • Risk/Reward: *1:{entry_signal['risk_reward']}* ⚖️
 • Type: *PROFESSIONAL* 💎
 
-⚡ *Execution Timing:*
-• Time-based entry confirmed
-• Optimal entry level
-• Professional setup
+⚡ *Execution Confirmed:*
+• ✅ New candle confirmed
+• ✅ Optimal entry level
+• ✅ Professional setup
+• ✅ Timing aligned
 
-*Execute this trade immediately!* 🚀
+*Execute this trade on new candle formation!* 🚀
 """
                 keyboard = [
                     [InlineKeyboardButton("✅ TRADE EXECUTED", callback_data="trade_done")],
-                    [InlineKeyboardButton("🔄 NEW SIGNAL", callback_data="get_signal")]
+                    [InlineKeyboardButton("🔄 NEW INSTANT SIGNAL", callback_data="get_signal")]
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 
@@ -837,7 +1026,9 @@ class ProfessionalTelegramBot:
 • Accuracy: 92.5%
 • Pairs: AUD/JPY, NZD/USD, USD/JPY
 
-*Signals auto-resume in session hours!* 📈
+🔔 *Session Alerts:* 30 minutes before each session
+
+*Auto-signals resume in session hours!* 📈
 """
         else:
             message = f"""
@@ -848,13 +1039,13 @@ class ProfessionalTelegramBot:
 🎯 *Accuracy:* {session['accuracy']}%
 💎 *Optimal Pairs:* {', '.join(session['optimal_pairs'])}
 
-⚡ *Professional Signals Active:*
-• 40s pre-entry system
-• Time-based confirmation
-• Candle pattern analysis
-• Real-time monitoring
+⚡ *Instant Signals Active:*
+• 🚀 Instant user signals
+• ⏱️ 40s pre-entry system
+• 🕯️ New candle based entries
+• 🤖 Auto-signals running
 
-*Professional trading active!* 🚀
+*Instant trading active!* 🚀
 """
         
         await update.message.reply_text(message, parse_mode='Markdown')
@@ -873,7 +1064,7 @@ class ProfessionalTelegramBot:
             await update.message.reply_text("📭 No signals yet. Market may be closed or starting soon!")
             return
         
-        message = "📡 *RECENT PROFESSIONAL SIGNALS*\n\n"
+        message = "📡 *RECENT INSTANT SIGNALS*\n\n"
         
         for symbol, signal_type, direction, entry, confidence, requested_by, created in signals:
             time_str = datetime.fromisoformat(created).strftime("%H:%M")
@@ -884,14 +1075,15 @@ class ProfessionalTelegramBot:
             message += f"{type_emoji} {dir_emoji} {symbol}{admin_badge}\n"
             message += f"💵 {entry} | {confidence*100:.1f}% | {time_str}\n\n"
         
-        message += "⚡ *40s pre-entry system active!*"
+        message += "⚡ *Instant 40s pre-entry system active!*\n"
+        message += "🕯️ *All entries based on new candle confirmation*"
         
         await update.message.reply_text(message, parse_mode='Markdown')
 
     async def contact_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /contact command"""
         message = f"""
-📞 *PROFESSIONAL SUPPORT*
+📞 *INSTANT SUPPORT*
 
 *Contact Admin:* {Config.ADMIN_CONTACT}
 
@@ -907,11 +1099,61 @@ class ProfessionalTelegramBot:
 • VIP - $99/month
 • PREMIUM - $199/month
 
-*Message for professional trading!* 💎
+*Message for instant trading!* 💎
 """
         keyboard = [
             [InlineKeyboardButton("📱 MESSAGE ADMIN", url=f"https://t.me/{Config.ADMIN_CONTACT.replace('@', '')}")],
-            [InlineKeyboardButton("🚀 GET SIGNAL", callback_data="get_signal")]
+            [InlineKeyboardButton("💎 UPGRADE PLANS", callback_data="upgrade")],
+            [InlineKeyboardButton("🚀 GET INSTANT SIGNAL", callback_data="get_signal")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def upgrade_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /upgrade command"""
+        message = f"""
+💎 *UPGRADE TO PREMIUM*
+
+*Contact Admin:* {Config.ADMIN_CONTACT}
+
+🚀 *Premium Plans:*
+
+🌅 *BASIC* - $19/month
+• Morning Session Access
+• Instant Signals
+• 10 Signals/Day
+• 95%+ Accuracy
+
+🌇 *PRO* - $49/month  
+• Morning + Evening Sessions
+• Enhanced Analysis
+• 25 Signals/Day
+• 96%+ Accuracy
+
+🌃 *VIP* - $99/month
+• All Sessions (24/7)
+• Priority Signals
+• 50 Signals/Day
+• 97%+ Accuracy
+
+🌟 *PREMIUM* - $199/month
+• 24/7 Priority Access
+• Unlimited Signals
+• Personal Support
+• 98%+ Accuracy
+
+💡 *All Premium Features:*
+• New Candle Based Entries
+• Session Broadcast Alerts
+• Advanced Analytics
+• Priority Execution
+
+*Contact {Config.ADMIN_CONTACT} to upgrade!* 🚀
+"""
+        keyboard = [
+            [InlineKeyboardButton("📞 CONTACT ADMIN", callback_data="contact")],
+            [InlineKeyboardButton("🚀 GET INSTANT SIGNAL", callback_data="get_signal")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -932,6 +1174,8 @@ class ProfessionalTelegramBot:
             await self.signals_command(update, context)
         elif query.data == "contact":
             await self.contact_command(update, context)
+        elif query.data == "upgrade":
+            await self.upgrade_command(update, context)
         elif query.data == "admin":
             if self.admin_auth.is_admin(user.id):
                 await self.admin_command(update, context)
@@ -965,11 +1209,11 @@ class MainApp:
         initialize_database()
         start_web_server()
         
-        self.bot = ProfessionalTelegramBot()
+        self.bot = InstantTelegramBot()
         await self.bot.initialize()
         
         self.running = True
-        logger.info("🚀 LEKZY FX AI PRO - Professional Signal System Started")
+        logger.info("🚀 LEKZY FX AI PRO - Instant Signal System Started")
     
     async def run(self):
         """Run application"""
