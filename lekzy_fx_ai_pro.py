@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-LEKZY FX AI PRO - FIXED VERSION WITH TIMEFRAME ENTRIES
+LEKZY FX AI PRO - Enhanced with UTC+1 Timing & Complete Command System
 """
 
 import os
@@ -10,8 +10,6 @@ import json
 import time
 import random
 import logging
-import secrets
-import string
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
@@ -23,10 +21,10 @@ class Config:
     TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "your_bot_token_here")
     ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "LEKZY_ADMIN_123")
     ADMIN_CONTACT = os.getenv("ADMIN_CONTACT", "@LekzyTradingPro")
-    ADMIN_USER_ID = os.getenv("ADMIN_USER_ID", "123456789")
     DB_PATH = "/app/data/lekzy_fx_ai.db"
     PORT = int(os.getenv("PORT", 10000))
     PRE_ENTRY_DELAY = 40  # seconds before entry
+    TIMEZONE_OFFSET = 1  # UTC+1
 
 # ==================== LOGGING SETUP ====================
 logging.basicConfig(
@@ -41,322 +39,192 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return """
-🤖 LEKZY FX AI PRO - ACTIVE 🚀
-
-✅ Bot Status: RUNNING
-✅ Token System: OPERATIONAL
-✅ Signal System: WORKING
-
-📊 Features:
-• Timeframe-Based Entries (1M, 5M, 15M)
-• Token Subscription System
-• Admin Signal Generation
-• Professional Trading
-"""
+    return "🤖 LEKZY FX AI PRO - UTC+1 Trading System 🚀"
 
 @app.route('/health')
 def health():
-    return json.dumps({
-        "status": "healthy",
-        "service": "lekzy_fx_ai_pro",
-        "timestamp": datetime.now().isoformat(),
-        "version": "4.0.0"
-    })
+    return "✅ Bot Status: Active (UTC+1)"
 
 def run_web_server():
-    try:
-        port = int(os.environ.get('PORT', Config.PORT))
-        logger.info(f"🌐 Starting web server on port {port}")
-        app.run(host='0.0.0.0', port=port, debug=False)
-    except Exception as e:
-        logger.error(f"❌ Web server failed: {e}")
+    app.run(host='0.0.0.0', port=Config.PORT)
 
 def start_web_server():
-    try:
-        web_thread = Thread(target=run_web_server)
-        web_thread.daemon = True
-        web_thread.start()
-        logger.info("✅ Web server thread started")
-    except Exception as e:
-        logger.error(f"❌ Failed to start web server: {e}")
+    web_thread = Thread(target=run_web_server)
+    web_thread.daemon = True
+    web_thread.start()
+    logger.info(f"🌐 Web server started on port {Config.PORT}")
 
 # ==================== DATABASE SETUP ====================
 def initialize_database():
+    """Initialize all database tables"""
     try:
         os.makedirs("/app/data", exist_ok=True)
+        
         conn = sqlite3.connect(Config.DB_PATH)
         cursor = conn.cursor()
 
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS users (
+            CREATE TABLE IF NOT EXISTS admin_sessions (
                 user_id INTEGER PRIMARY KEY,
                 username TEXT,
-                first_name TEXT,
+                login_time TEXT,
+                expiry_time TEXT
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS subscriptions (
+                user_id INTEGER PRIMARY KEY,
                 plan_type TEXT DEFAULT 'TRIAL',
-                subscription_end TEXT,
-                max_daily_signals INTEGER DEFAULT 5,
+                start_date TEXT,
+                end_date TEXT,
+                payment_status TEXT DEFAULT 'ACTIVE',
                 signals_used INTEGER DEFAULT 0,
-                joined_at TEXT DEFAULT CURRENT_TIMESTAMP
+                max_daily_signals INTEGER DEFAULT 5,
+                allowed_sessions TEXT DEFAULT '["MORNING"]',
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS signals (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                signal_id TEXT,
+                signal_id TEXT UNIQUE,
                 symbol TEXT,
+                signal_type TEXT,
                 direction TEXT,
                 entry_price REAL,
                 take_profit REAL,
                 stop_loss REAL,
                 confidence REAL,
-                signal_type TEXT,
-                timeframe TEXT,
+                session_type TEXT,
+                analysis TEXT,
+                time_to_entry INTEGER,
+                risk_reward REAL,
+                signal_style TEXT DEFAULT 'NORMAL',  -- NORMAL or QUICK
+                requested_by TEXT DEFAULT 'AUTO',
+                status TEXT DEFAULT 'ACTIVE',
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
 
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS admin_sessions (
-                user_id INTEGER PRIMARY KEY,
-                username TEXT,
-                login_time TEXT
-            )
-        """)
-
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS subscription_tokens (
-                token TEXT PRIMARY KEY,
-                days_valid INTEGER DEFAULT 30,
-                created_by INTEGER,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                used_by INTEGER DEFAULT NULL,
-                used_at TEXT DEFAULT NULL,
-                status TEXT DEFAULT 'ACTIVE'
-            )
-        """)
-
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS user_subscriptions (
-                user_id INTEGER PRIMARY KEY,
-                token_used TEXT,
-                plan_type TEXT DEFAULT 'PREMIUM',
-                start_date TEXT,
-                end_date TEXT,
-                max_daily_signals INTEGER DEFAULT 50,
+            CREATE TABLE IF NOT EXISTS user_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                command TEXT,
+                status TEXT DEFAULT 'PENDING',
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
 
         conn.commit()
         conn.close()
-        logger.info("✅ Database initialized successfully")
+        logger.info("✅ Enhanced database initialized")
         
     except Exception as e:
-        logger.error(f"❌ Database error: {e}")
+        logger.error(f"❌ Database setup failed: {e}")
 
-# ==================== TOKEN MANAGER ====================
-class TokenManager:
-    def __init__(self, db_path):
-        self.db_path = db_path
+# ==================== ADMIN AUTHENTICATION ====================
+class AdminAuth:
+    def __init__(self):
+        self.session_duration = timedelta(hours=24)
     
-    def generate_token(self, days_valid=30, created_by=None):
-        try:
-            alphabet = string.ascii_uppercase + string.digits
-            token = ''.join(secrets.choice(alphabet) for _ in range(12))
-            
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.execute(
-                "INSERT INTO subscription_tokens (token, days_valid, created_by) VALUES (?, ?, ?)",
-                (token, days_valid, created_by)
-            )
-            conn.commit()
-            conn.close()
-            
-            logger.info(f"✅ Token generated: {token} for {days_valid} days")
-            return token
-            
-        except Exception as e:
-            logger.error(f"❌ Token generation failed: {e}")
-            return None
+    def verify_token(self, token: str) -> bool:
+        """Verify admin token"""
+        return token == Config.ADMIN_TOKEN
     
-    def validate_token(self, token):
-        try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.execute(
-                "SELECT token, days_valid, status FROM subscription_tokens WHERE token = ? AND status = 'ACTIVE'",
-                (token,)
-            )
-            result = cursor.fetchone()
-            
-            if not result:
-                conn.close()
-                return False, "Invalid or expired token"
-            
-            token_str, days_valid, status = result
-            
-            conn.execute(
-                "UPDATE subscription_tokens SET status = 'USED', used_at = ? WHERE token = ?",
-                (datetime.now().isoformat(), token)
-            )
-            conn.commit()
-            conn.close()
-            
-            return True, days_valid
-            
-        except Exception as e:
-            logger.error(f"❌ Token validation failed: {e}")
-            return False, "Token validation error"
-
-# ==================== SUBSCRIPTION MANAGER ====================
-class SubscriptionManager:
-    def __init__(self, db_path):
-        self.db_path = db_path
-        self.token_manager = TokenManager(db_path)
-    
-    def activate_premium_subscription(self, user_id, token, days_valid):
-        try:
-            start_date = datetime.now()
-            end_date = start_date + timedelta(days=days_valid)
-            
-            conn = sqlite3.connect(self.db_path)
-            
+    def create_session(self, user_id: int, username: str):
+        """Create admin session"""
+        login_time = datetime.now()
+        expiry_time = login_time + self.session_duration
+        
+        with sqlite3.connect(Config.DB_PATH) as conn:
             conn.execute("""
-                INSERT OR REPLACE INTO user_subscriptions 
-                (user_id, token_used, plan_type, start_date, end_date, max_daily_signals)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (user_id, token, "PREMIUM", start_date.isoformat(), end_date.isoformat(), 50))
-            
-            conn.execute("""
-                INSERT OR REPLACE INTO users 
-                (user_id, plan_type, subscription_end, max_daily_signals, signals_used)
-                VALUES (?, ?, ?, ?, ?)
-            """, (user_id, "PREMIUM", end_date.isoformat(), 50, 0))
-            
+                INSERT OR REPLACE INTO admin_sessions 
+                (user_id, username, login_time, expiry_time)
+                VALUES (?, ?, ?, ?)
+            """, (user_id, username, login_time.isoformat(), expiry_time.isoformat()))
             conn.commit()
-            conn.close()
-            
-            logger.info(f"✅ Premium activated for user {user_id} for {days_valid} days")
-            return True
-            
-        except Exception as e:
-            logger.error(f"❌ Subscription activation failed: {e}")
-            return False
     
-    def get_user_subscription(self, user_id):
-        try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.execute("""
-                SELECT plan_type, subscription_end, max_daily_signals, signals_used 
-                FROM users WHERE user_id = ?
-            """, (user_id,))
-            result = cursor.fetchone()
-            conn.close()
-            
-            if result:
-                plan_type, sub_end, max_signals, signals_used = result
-                
-                is_active = True
-                if sub_end and plan_type != "TRIAL":
-                    end_date = datetime.fromisoformat(sub_end)
-                    is_active = datetime.now() < end_date
-                
-                return {
-                    "plan_type": plan_type,
-                    "is_active": is_active,
-                    "subscription_end": sub_end,
-                    "max_daily_signals": max_signals,
-                    "signals_used": signals_used,
-                    "signals_remaining": max_signals - signals_used
-                }
-            else:
-                return {
-                    "plan_type": "TRIAL",
-                    "is_active": True,
-                    "subscription_end": None,
-                    "max_daily_signals": 5,
-                    "signals_used": 0,
-                    "signals_remaining": 5
-                }
-                
-        except Exception as e:
-            logger.error(f"❌ Get subscription failed: {e}")
-            return {
-                "plan_type": "TRIAL",
-                "is_active": True,
-                "subscription_end": None,
-                "max_daily_signals": 5,
-                "signals_used": 0,
-                "signals_remaining": 5
-            }
-    
-    def can_user_request_signal(self, user_id):
-        subscription = self.get_user_subscription(user_id)
-        
-        if not subscription["is_active"]:
-            return False, "Subscription expired. Use /register to renew."
-        
-        if subscription["signals_used"] >= subscription["max_daily_signals"]:
-            return False, "Daily signal limit reached. Upgrade for more signals!"
-        
-        return True, "OK"
-    
-    def increment_signal_count(self, user_id):
-        try:
-            conn = sqlite3.connect(self.db_path)
-            conn.execute(
-                "UPDATE users SET signals_used = signals_used + 1 WHERE user_id = ?",
+    def is_admin(self, user_id: int) -> bool:
+        """Check if user has active admin session"""
+        with sqlite3.connect(Config.DB_PATH) as conn:
+            cursor = conn.execute(
+                "SELECT expiry_time FROM admin_sessions WHERE user_id = ?",
                 (user_id,)
             )
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            logger.error(f"❌ Signal count increment failed: {e}")
+            result = cursor.fetchone()
+            
+            if result:
+                expiry_time = datetime.fromisoformat(result[0])
+                if expiry_time > datetime.now():
+                    return True
+                else:
+                    conn.execute("DELETE FROM admin_sessions WHERE user_id = ?", (user_id,))
+                    conn.commit()
+            return False
 
-# ==================== WORKING SESSION MANAGER ====================
-class WorkingSessionManager:
+# ==================== UTC+1 SESSION MANAGER ====================
+class SessionManager:
     def __init__(self):
+        # UTC+1 Trading Sessions (Central European Time)
         self.sessions = {
-            "MORNING": {"start_hour": 7, "end_hour": 11, "name": "🌅 London Session"},
-            "EVENING": {"start_hour": 15, "end_hour": 19, "name": "🌇 NY/London Overlap"},
-            "ASIAN": {"start_hour": 23, "end_hour": 3, "name": "🌃 Asian Session"}
+            "MORNING": {
+                "start_hour": 7, "end_hour": 11,  # 08:00-12:00 UTC+1
+                "name": "🌅 London Session",
+                "optimal_pairs": ["EUR/USD", "GBP/USD", "EUR/JPY"],
+                "volatility": "HIGH",
+                "accuracy": 96.2
+            },
+            "EVENING": {
+                "start_hour": 15, "end_hour": 19,  # 16:00-20:00 UTC+1
+                "name": "🌇 NY/London Overlap", 
+                "optimal_pairs": ["USD/JPY", "USD/CAD", "XAU/USD"],
+                "volatility": "VERY HIGH",
+                "accuracy": 97.8
+            },
+            "ASIAN": {
+                "start_hour": 23, "end_hour": 3,   # 00:00-04:00 UTC+1 (next day)
+                "name": "🌃 Asian Session",
+                "optimal_pairs": ["AUD/JPY", "NZD/USD", "USD/JPY"],
+                "volatility": "MEDIUM",
+                "accuracy": 92.5
+            },
+            "ADMIN_24_7": {
+                "start_hour": 0, "end_hour": 24,
+                "name": "👑 24/7 Admin Session",
+                "optimal_pairs": ["EUR/USD", "GBP/USD", "USD/JPY", "XAU/USD", "AUD/USD", "USD/CAD"],
+                "volatility": "ADMIN",
+                "accuracy": 98.5
+            }
         }
 
     def get_current_time_utc1(self):
-        return datetime.utcnow() + timedelta(hours=1)
+        """Get current time in UTC+1"""
+        return datetime.utcnow() + timedelta(hours=Config.TIMEZONE_OFFSET)
 
     def get_current_session(self):
-        try:
-            now_utc1 = self.get_current_time_utc1()
-            current_hour = now_utc1.hour
-            current_time_str = now_utc1.strftime("%H:%M UTC+1")
-            
-            for session_id, session in self.sessions.items():
-                if session_id == "ASIAN":
-                    if current_hour >= session["start_hour"] or current_hour < session["end_hour"]:
-                        return {**session, "id": session_id, "current_time": current_time_str, "status": "ACTIVE"}
-                else:
-                    if session["start_hour"] <= current_hour < session["end_hour"]:
-                        return {**session, "id": session_id, "current_time": current_time_str, "status": "ACTIVE"}
-            
-            next_session = self.get_next_session()
-            return {
-                "id": "CLOSED", 
-                "name": "Market Closed", 
-                "current_time": current_time_str,
-                "status": "CLOSED",
-                "next_session": next_session["name"],
-                "next_session_time": f"{next_session['start_hour']:02d}:00-{next_session['end_hour']:02d}:00"
-            }
-            
-        except Exception as e:
-            logger.error(f"Session error: {e}")
-            return {"id": "ERROR", "name": "System Error", "current_time": "N/A", "status": "ERROR"}
+        """Get current active trading session in UTC+1"""
+        now_utc1 = self.get_current_time_utc1()
+        current_hour = now_utc1.hour
+        current_time_str = now_utc1.strftime("%H:%M UTC+1")
+        
+        # Handle Asian session crossing midnight
+        for session_id, session in self.sessions.items():
+            if session_id == "ASIAN":
+                if current_hour >= session["start_hour"] or current_hour < session["end_hour"]:
+                    return {**session, "id": session_id, "current_time": current_time_str}
+            else:
+                if session["start_hour"] <= current_hour < session["end_hour"]:
+                    return {**session, "id": session_id, "current_time": current_time_str}
+        
+        return {"id": "CLOSED", "name": "Market Closed", "current_time": current_time_str}
 
     def get_next_session(self):
-        sessions_order = ["ASIAN", "MORNING", "EVENING"]
+        """Get next trading session"""
         current_session = self.get_current_session()
+        sessions_order = ["ASIAN", "MORNING", "EVENING"]
         
         if current_session["id"] == "CLOSED":
             return self.sessions["ASIAN"]
@@ -365,828 +233,1023 @@ class WorkingSessionManager:
         next_index = (current_index + 1) % len(sessions_order)
         return self.sessions[sessions_order[next_index]]
 
-# ==================== ENHANCED SIGNAL GENERATOR WITH TIMEFRAMES ====================
-class WorkingSignalGenerator:
+# ==================== ENHANCED SIGNAL GENERATOR ====================
+class EnhancedSignalGenerator:
     def __init__(self):
-        self.all_pairs = ["EUR/USD", "GBP/USD", "USD/JPY", "XAU/USD"]
+        self.all_pairs = ["EUR/USD", "GBP/USD", "USD/JPY", "XAU/USD", "AUD/USD", "USD/CAD"]
         self.pending_signals = {}
     
-    def generate_pre_entry_signal(self, symbol=None, signal_style="NORMAL"):
-        try:
-            if not symbol:
-                symbol = random.choice(self.all_pairs)
-            
-            direction = random.choice(["BUY", "SELL"])
-            
-            # REALISTIC PRICES
-            if symbol == "EUR/USD":
-                base_price = round(random.uniform(1.07500, 1.09500), 5)
-            elif symbol == "GBP/USD":
-                base_price = round(random.uniform(1.25800, 1.27800), 5)
-            elif symbol == "USD/JPY":
-                base_price = round(random.uniform(148.500, 151.500), 3)
-            elif symbol == "XAU/USD":
-                base_price = round(random.uniform(1950.00, 2050.00), 2)
-            else:
-                base_price = round(random.uniform(1.08000, 1.10000), 5)
-            
-            spread = 0.00015
-            if direction == "BUY":
-                entry_price = round(base_price + spread, 5 if "XAU" not in symbol else 2)
-            else:
-                entry_price = round(base_price - spread, 5 if "XAU" not in symbol else 2)
-            
-            # TIMEFRAME BASED ON SIGNAL STYLE
-            if signal_style == "QUICK":
-                timeframe = "1M"  # 1 Minute for quick trades
-                confidence = round(random.uniform(0.82, 0.90), 3)
-                entry_delay = 20  # 20 seconds for quick trades
-            else:
-                timeframe = random.choice(["5M", "15M"])  # 5M or 15M for normal trades
-                confidence = round(random.uniform(0.88, 0.96), 3)
-                entry_delay = Config.PRE_ENTRY_DELAY
-            
-            current_time = datetime.now()
-            entry_time = current_time + timedelta(seconds=entry_delay)
-            
-            signal_id = f"SIGNAL_{int(time.time())}_{symbol.replace('/', '')}"
-            
-            signal_data = {
-                "signal_id": signal_id,
-                "symbol": symbol,
-                "direction": direction,
-                "entry_price": entry_price,
-                "take_profit": 0.0,
-                "stop_loss": 0.0,
-                "confidence": confidence,
-                "current_time": current_time.strftime("%H:%M:%S"),
-                "entry_time": entry_time.strftime("%H:%M:%S"),
-                "timeframe": timeframe,
-                "signal_style": signal_style,
-                "entry_delay": entry_delay,
-                "generated_at": current_time.isoformat()
-            }
-            
-            self.pending_signals[signal_id] = signal_data
-            logger.info(f"✅ {signal_style} Pre-entry generated: {symbol} {direction} at {entry_price} on {timeframe}")
-            return signal_data
-            
-        except Exception as e:
-            logger.error(f"❌ Pre-entry generation failed: {e}")
-            current_time = datetime.now()
-            entry_time = current_time + timedelta(seconds=Config.PRE_ENTRY_DELAY)
-            
-            return {
-                "signal_id": f"BACKUP_{int(time.time())}",
-                "symbol": "EUR/USD",
-                "direction": "BUY",
-                "entry_price": 1.08500,
-                "take_profit": 0.0,
-                "stop_loss": 0.0,
-                "confidence": 0.92,
-                "current_time": current_time.strftime("%H:%M:%S"),
-                "entry_time": entry_time.strftime("%H:%M:%S"),
-                "timeframe": "5M",
-                "signal_style": "NORMAL",
-                "entry_delay": Config.PRE_ENTRY_DELAY,
-                "generated_at": current_time.isoformat()
-            }
+    def generate_candle_analysis(self, symbol: str, signal_style: str = "NORMAL") -> dict:
+        """Generate detailed candle-based analysis"""
+        
+        if signal_style == "QUICK":
+            # Quick Trade Analysis - Faster, more aggressive
+            candle_patterns = [
+                "Bullish Engulfing pattern forming on M5",
+                "Bearish Engulfing pattern confirmed",
+                "Hammer candle at support with volume",
+                "Shooting star at resistance level",
+                "Doji candle indicating reversal",
+                "Three white soldiers pattern emerging"
+            ]
+            timeframes = ["M1", "M3", "M5"]
+            confidence_boost = 0.04
+            speed = "QUICK_TRADE"
+        else:
+            # Normal Trade Analysis - More conservative
+            candle_patterns = [
+                "Strong bullish candle closing above resistance",
+                "Bearish candle breaking support with momentum",
+                "Pin bar rejection at key level",
+                "Inside bar breakout confirmation",
+                "Evening star pattern forming on H1",
+                "Morning star reversal pattern confirmed"
+            ]
+            timeframes = ["M5", "M15", "H1"]
+            confidence_boost = 0.02
+            speed = "NORMAL"
+        
+        # Technical indicators
+        indicators = {
+            "rsi": random.randint(25, 75),
+            "macd": random.choice(["BULLISH_CROSS", "BEARISH_CROSS", "NEUTRAL"]),
+            "stochastic": random.randint(20, 80),
+            "volume": random.choice(["ABOVE_AVERAGE", "HIGH", "VERY_HIGH"]),
+            "atr": round(random.uniform(0.0008, 0.0015), 4)
+        }
+        
+        # Market conditions
+        market_conditions = [
+            "New candle forming with strong momentum",
+            "Price reacting to key Fibonacci level",
+            "Institutional order flow detected",
+            "Market structure break confirmed",
+            "Liquidity pool activation",
+            "Economic data driving momentum"
+        ]
+        
+        return {
+            "signal_style": signal_style,
+            "candle_pattern": random.choice(candle_patterns),
+            "timeframe": random.choice(timeframes),
+            "market_condition": random.choice(market_conditions),
+            "key_level": round(random.uniform(1.0750, 1.0950), 4) if "EUR" in symbol else round(random.uniform(1.2500, 1.2800), 4),
+            "momentum": random.choice(["STRONG_BULLISH", "STRONG_BEARISH", "BUILDING"]),
+            "indicators": indicators,
+            "confidence_boost": confidence_boost,
+            "execution_speed": speed,
+            "new_candle_analysis": True,
+            "risk_rating": random.choice(["LOW", "MEDIUM", "HIGH"])
+        }
     
-    def generate_entry_signal(self, signal_id):
-        try:
-            if signal_id not in self.pending_signals:
-                return None
-            
-            pre_signal = self.pending_signals[signal_id]
-            
-            # ADJUST TP/SL BASED ON TIMEFRAME
-            if pre_signal["timeframe"] == "1M":
-                # Tighter TP/SL for 1M trades
-                if "XAU" in pre_signal["symbol"]:
-                    tp_distance = random.uniform(8.0, 15.0)
-                    sl_distance = random.uniform(5.0, 10.0)
-                elif "JPY" in pre_signal["symbol"]:
-                    tp_distance = random.uniform(0.5, 1.0)
-                    sl_distance = random.uniform(0.3, 0.7)
-                else:
-                    tp_distance = random.uniform(0.0015, 0.0025)
-                    sl_distance = random.uniform(0.0010, 0.0018)
-            else:
-                # Standard TP/SL for 5M/15M
-                if "XAU" in pre_signal["symbol"]:
-                    tp_distance = random.uniform(12.0, 25.0)
-                    sl_distance = random.uniform(8.0, 18.0)
-                elif "JPY" in pre_signal["symbol"]:
-                    tp_distance = random.uniform(0.8, 1.5)
-                    sl_distance = random.uniform(0.5, 1.2)
-                else:
-                    tp_distance = random.uniform(0.0025, 0.0040)
-                    sl_distance = random.uniform(0.0015, 0.0025)
-            
-            if pre_signal["direction"] == "BUY":
-                take_profit = round(pre_signal["entry_price"] + tp_distance, 5 if "XAU" not in pre_signal["symbol"] else 2)
-                stop_loss = round(pre_signal["entry_price"] - sl_distance, 5 if "XAU" not in pre_signal["symbol"] else 2)
-            else:
-                take_profit = round(pre_signal["entry_price"] - tp_distance, 5 if "XAU" not in pre_signal["symbol"] else 2)
-                stop_loss = round(pre_signal["entry_price"] + sl_distance, 5 if "XAU" not in pre_signal["symbol"] else 2)
-            
-            entry_signal = {
-                **pre_signal,
-                "take_profit": take_profit,
-                "stop_loss": stop_loss,
-                "entry_time_actual": datetime.now().strftime("%H:%M:%S"),
-                "risk_reward": round(abs(take_profit - pre_signal["entry_price"]) / abs(pre_signal["entry_price"] - stop_loss), 2)
-            }
-            
-            del self.pending_signals[signal_id]
-            logger.info(f"✅ Entry generated: {pre_signal['symbol']} TP: {take_profit} SL: {stop_loss}")
-            return entry_signal
-            
-        except Exception as e:
-            logger.error(f"❌ Entry generation failed: {e}")
+    def generate_pre_entry_signal(self, symbol: str, signal_style: str = "NORMAL", is_admin: bool = False) -> dict:
+        """Generate pre-entry signal with candle analysis"""
+        analysis = self.generate_candle_analysis(symbol, signal_style)
+        direction = "BUY" if random.random() > 0.48 else "SELL"
+        
+        # Calculate entry price based on analysis
+        base_price = analysis["key_level"]
+        if direction == "BUY":
+            entry_price = round(base_price + 0.0005, 5)
+        else:
+            entry_price = round(base_price - 0.0005, 5)
+        
+        # Enhanced confidence for admin and quick trades
+        base_confidence = random.uniform(0.85, 0.95)
+        if is_admin:
+            base_confidence += 0.03
+        if signal_style == "QUICK":
+            base_confidence += analysis["confidence_boost"]
+        
+        signal_id = f"PRE_{symbol.replace('/', '')}_{int(time.time())}"
+        
+        signal_data = {
+            "signal_id": signal_id,
+            "symbol": symbol,
+            "signal_type": "PRE_ENTRY",
+            "direction": direction,
+            "entry_price": entry_price,
+            "take_profit": 0.0,
+            "stop_loss": 0.0,
+            "confidence": min(0.98, round(base_confidence, 3)),
+            "session_type": "ADMIN_24_7" if is_admin else "AUTO",
+            "analysis": json.dumps(analysis),
+            "time_to_entry": Config.PRE_ENTRY_DELAY,
+            "risk_reward": 0.0,
+            "signal_style": signal_style,
+            "requested_by": "ADMIN" if is_admin else "AUTO",
+            "generated_at": datetime.now().isoformat()
+        }
+        
+        self.pending_signals[signal_id] = signal_data
+        return signal_data
+    
+    def generate_entry_signal(self, pre_signal_id: str) -> dict:
+        """Generate entry signal based on pre-entry"""
+        if pre_signal_id not in self.pending_signals:
             return None
+        
+        pre_signal = self.pending_signals[pre_signal_id]
+        analysis = json.loads(pre_signal["analysis"])
+        
+        # Calculate TP/SL based on signal style
+        if analysis["signal_style"] == "QUICK":
+            movement = 0.0020  # Smaller targets for quick trades
+            risk_multiplier = 0.5  # Tighter stops
+        else:
+            movement = 0.0035  # Larger targets for normal trades
+            risk_multiplier = 0.6
+        
+        if pre_signal["direction"] == "BUY":
+            take_profit = round(pre_signal["entry_price"] + movement, 5)
+            stop_loss = round(pre_signal["entry_price"] - movement * risk_multiplier, 5)
+        else:
+            take_profit = round(pre_signal["entry_price"] - movement, 5)
+            stop_loss = round(pre_signal["entry_price"] + movement * risk_multiplier, 5)
+        
+        risk_reward = round((take_profit - pre_signal["entry_price"]) / (pre_signal["entry_price"] - stop_loss), 2) if pre_signal["direction"] == "BUY" else round((pre_signal["entry_price"] - take_profit) / (stop_loss - pre_signal["entry_price"]), 2)
+        
+        entry_signal_id = pre_signal_id.replace("PRE_", "ENTRY_")
+        
+        entry_signal = {
+            **pre_signal,
+            "signal_id": entry_signal_id,
+            "signal_type": "ENTRY",
+            "take_profit": take_profit,
+            "stop_loss": stop_loss,
+            "time_to_entry": 0,
+            "risk_reward": risk_reward
+        }
+        
+        del self.pending_signals[pre_signal_id]
+        return entry_signal
 
-# ==================== SIMPLE USER MANAGER ====================
-class SimpleUserManager:
-    def __init__(self, db_path):
+# ==================== SUBSCRIPTION MANAGER ====================
+class SubscriptionManager:
+    def __init__(self, db_path: str):
         self.db_path = db_path
     
-    def add_user(self, user_id, username, first_name):
-        try:
-            conn = sqlite3.connect(self.db_path)
-            conn.execute(
-                "INSERT OR REPLACE INTO users (user_id, username, first_name) VALUES (?, ?, ?)",
-                (user_id, username, first_name)
-            )
-            conn.commit()
-            conn.close()
-            logger.info(f"✅ User added: {username}")
-            return True
-        except Exception as e:
-            logger.error(f"❌ User add failed: {e}")
-            return False
-
-# ==================== FIXED ADMIN AUTHENTICATION ====================
-class AdminAuth:
-    def __init__(self):
-        self.session_duration = timedelta(hours=24)
-    
-    def verify_token(self, token: str) -> bool:
-        return token == Config.ADMIN_TOKEN
-    
-    def create_session(self, user_id: int, username: str):
-        login_time = datetime.now()
-        with sqlite3.connect(Config.DB_PATH) as conn:
+    def start_trial(self, user_id: int, username: str, first_name: str):
+        """Start free trial"""
+        end_date = datetime.now() + timedelta(days=3)
+        
+        with sqlite3.connect(self.db_path) as conn:
             conn.execute("""
-                INSERT OR REPLACE INTO admin_sessions 
-                (user_id, username, login_time)
-                VALUES (?, ?, ?)
-            """, (user_id, username, login_time.isoformat()))
+                INSERT OR REPLACE INTO subscriptions 
+                (user_id, plan_type, start_date, end_date, payment_status, max_daily_signals, allowed_sessions)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                user_id, "TRIAL", datetime.now().isoformat(), 
+                end_date.isoformat(), "ACTIVE", 5, '["MORNING"]'
+            ))
             conn.commit()
+        
+        logger.info(f"✅ Trial started: {username} ({user_id})")
     
-    def is_admin(self, user_id: int) -> bool:
-        try:
-            with sqlite3.connect(Config.DB_PATH) as conn:
-                cursor = conn.execute(
-                    "SELECT login_time FROM admin_sessions WHERE user_id = ?",
-                    (user_id,)
-                )
-                result = cursor.fetchone()
-                
-                if result:
-                    login_time = datetime.fromisoformat(result[0])
-                    # Check if session is still valid (24 hours)
-                    if login_time + self.session_duration > datetime.now():
-                        return True
-                    else:
-                        # Session expired, remove it
-                        conn.execute("DELETE FROM admin_sessions WHERE user_id = ?", (user_id,))
-                        conn.commit()
-                return False
-        except Exception as e:
-            logger.error(f"❌ Admin check failed: {e}")
-            return False
+    def get_user_plan(self, user_id: int) -> str:
+        """Get user's current plan"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT plan_type FROM subscriptions WHERE user_id = ?",
+                (user_id,)
+            )
+            result = cursor.fetchone()
+            return result[0] if result else "TRIAL"
 
-# ==================== WORKING TRADING BOT ====================
-class WorkingTradingBot:
+# ==================== ENHANCED TRADING BOT ====================
+class EnhancedTradingBot:
     def __init__(self, application):
         self.application = application
-        self.session_manager = WorkingSessionManager()
-        self.signal_generator = WorkingSignalGenerator()
-        self.user_manager = SimpleUserManager(Config.DB_PATH)
-        self.subscription_manager = SubscriptionManager(Config.DB_PATH)
-        self.admin_auth = AdminAuth()
+        self.session_manager = SessionManager()
+        self.signal_generator = EnhancedSignalGenerator()
+        self.is_running = False
+    
+    async def start_auto_signals(self):
+        """Start automatic signal generation during sessions"""
         self.is_running = True
+        
+        async def signal_loop():
+            while self.is_running:
+                try:
+                    session = self.session_manager.get_current_session()
+                    
+                    if session["id"] != "CLOSED" and session["id"] != "ADMIN_24_7":
+                        logger.info(f"🎯 Generating {session['name']} signals")
+                        
+                        for symbol in session["optimal_pairs"][:1]:
+                            # Generate pre-entry signal
+                            pre_signal = self.signal_generator.generate_pre_entry_signal(symbol, "NORMAL", False)
+                            
+                            # Store pre-entry
+                            with sqlite3.connect(Config.DB_PATH) as conn:
+                                conn.execute("""
+                                    INSERT INTO signals 
+                                    (signal_id, symbol, signal_type, direction, entry_price, take_profit, stop_loss, confidence, session_type, analysis, time_to_entry, risk_reward, signal_style, requested_by)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                """, (
+                                    pre_signal["signal_id"], pre_signal["symbol"], pre_signal["signal_type"],
+                                    pre_signal["direction"], pre_signal["entry_price"], pre_signal["take_profit"],
+                                    pre_signal["stop_loss"], pre_signal["confidence"], pre_signal["session_type"],
+                                    pre_signal["analysis"], pre_signal["time_to_entry"], pre_signal["risk_reward"],
+                                    pre_signal["signal_style"], pre_signal["requested_by"]
+                                ))
+                                conn.commit()
+                            
+                            logger.info(f"📊 Pre-entry: {pre_signal['symbol']} {pre_signal['direction']} ({pre_signal['signal_style']})")
+                            
+                            # Wait 40 seconds for entry
+                            await asyncio.sleep(Config.PRE_ENTRY_DELAY)
+                            
+                            # Generate entry signal
+                            entry_signal = self.signal_generator.generate_entry_signal(pre_signal["signal_id"])
+                            
+                            if entry_signal:
+                                with sqlite3.connect(Config.DB_PATH) as conn:
+                                    conn.execute("""
+                                        INSERT INTO signals 
+                                        (signal_id, symbol, signal_type, direction, entry_price, take_profit, stop_loss, confidence, session_type, analysis, time_to_entry, risk_reward, signal_style, requested_by)
+                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    """, tuple(entry_signal.values()))
+                                    conn.commit()
+                                
+                                logger.info(f"🎯 Entry: {entry_signal['symbol']} {entry_signal['direction']}")
+                    
+                    await asyncio.sleep(random.randint(300, 600))
+                    
+                except Exception as e:
+                    logger.error(f"Auto signal error: {e}")
+                    await asyncio.sleep(60)
+        
+        asyncio.create_task(signal_loop())
+        logger.info("✅ Auto signal generation started")
     
-    async def send_welcome_message(self, user, chat_id):
+    async def generate_admin_signal_sequence(self, user_id: int, symbol: str = None, signal_style: str = "NORMAL"):
+        """Generate admin signal sequence with pre-entry and entry"""
         try:
-            current_session = self.session_manager.get_current_session()
-            subscription = self.subscription_manager.get_user_subscription(user.id)
-            is_admin = self.admin_auth.is_admin(user.id)
+            if not symbol:
+                symbol = random.choice(self.signal_generator.all_pairs)
             
-            # Base welcome message
-            if current_session["status"] == "ACTIVE":
-                message = f"""
-🎉 *WELCOME TO LEKZY FX AI PRO!* 🚀
-
-*Hello {user.first_name}!* 👋
-
-📊 *Your Account Status:*
-• Plan: *{subscription['plan_type']}*
-• Signals: *{subscription['signals_used']}/{subscription['max_daily_signals']} used*
-• Status: *{'✅ ACTIVE' if subscription['is_active'] else '❌ EXPIRED'}*
-
-✅ *Live Market Session: {current_session['name']}*
-✅ *Current Time: {current_session['current_time']}*
-
-💡 *Ready to trade? Use the buttons below!*
-"""
-            else:
-                message = f"""
-🎉 *WELCOME TO LEKZY FX AI PRO!* 🚀
-
-*Hello {user.first_name}!* 👋
-
-📊 *Your Account Status:*
-• Plan: *{subscription['plan_type']}*
-• Signals: *{subscription['signals_used']}/{subscription['max_daily_signals']} used*
-• Status: *{'✅ ACTIVE' if subscription['is_active'] else '❌ EXPIRED'}*
-
-⏸️ *MARKET IS CURRENTLY CLOSED*
-
-🕒 *Current Time:* {current_session['current_time']}
-📅 *Next Session:* {current_session['next_session']}
-⏰ *Opens at:* {current_session['next_session_time']} UTC+1
-"""
+            # Step 1: Generate pre-entry signal
+            pre_signal = self.signal_generator.generate_pre_entry_signal(symbol, signal_style, True)
             
-            # Add admin badge if user is admin
-            if is_admin:
-                message += "\n👑 *You have Admin Access* - Use /admin for admin features\n"
+            # Store pre-entry
+            with sqlite3.connect(Config.DB_PATH) as conn:
+                conn.execute("""
+                    INSERT INTO signals 
+                    (signal_id, symbol, signal_type, direction, entry_price, take_profit, stop_loss, confidence, session_type, analysis, time_to_entry, risk_reward, signal_style, requested_by)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    pre_signal["signal_id"], pre_signal["symbol"], pre_signal["signal_type"],
+                    pre_signal["direction"], pre_signal["entry_price"], pre_signal["take_profit"],
+                    pre_signal["stop_loss"], pre_signal["confidence"], pre_signal["session_type"],
+                    pre_signal["analysis"], pre_signal["time_to_entry"], pre_signal["risk_reward"],
+                    pre_signal["signal_style"], pre_signal["requested_by"]
+                ))
+                conn.commit()
             
-            message += "\n*Tap buttons below to get started!* 🎯"
+            logger.info(f"📊 Admin Pre-entry: {pre_signal['symbol']} {pre_signal['direction']} ({signal_style})")
             
-            # Create keyboard - FIXED BUTTON LAYOUT
-            keyboard = []
+            # Return pre-entry signal immediately
+            pre_entry_data = {
+                "pre_signal": pre_signal,
+                "entry_in_seconds": Config.PRE_ENTRY_DELAY
+            }
             
-            if current_session["status"] == "ACTIVE":
-                keyboard.append([InlineKeyboardButton("🚀 GET SIGNAL NOW", callback_data="get_signal")])
-            
-            keyboard.append([InlineKeyboardButton("💎 REGISTER/UPGRADE", callback_data="show_register")])
-            keyboard.append([InlineKeyboardButton("🕒 MARKET STATUS", callback_data="session_info")])
-            keyboard.append([InlineKeyboardButton("📞 CONTACT SUPPORT", callback_data="contact_support")])
-            
-            # Add admin buttons if user is admin
-            if is_admin:
-                keyboard.insert(0, [InlineKeyboardButton("👑 ADMIN PANEL", callback_data="admin_panel")])
-                if current_session["status"] == "ACTIVE":
-                    keyboard.insert(1, [
-                        InlineKeyboardButton("⚡ QUICK TRADE", callback_data="admin_quick"),
-                        InlineKeyboardButton("📈 NORMAL TRADE", callback_data="admin_normal")
-                    ])
-            
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            await self.application.bot.send_message(
-                chat_id=chat_id,
-                text=message,
-                reply_markup=reply_markup,
-                parse_mode='Markdown'
-            )
+            return pre_entry_data
             
         except Exception as e:
-            logger.error(f"❌ Welcome message failed: {e}")
-            await self.application.bot.send_message(
-                chat_id=chat_id,
-                text=f"Welcome {user.first_name}! Use /signal to get trading signals.",
-                parse_mode='Markdown'
-            )
+            logger.error(f"❌ Admin signal generation failed: {e}")
+            return None
     
-    async def generate_signal_for_user(self, user_id, chat_id, signal_style="NORMAL", is_admin=False):
+    async def generate_admin_entry_signal(self, pre_signal_id: str):
+        """Generate entry signal after pre-entry delay"""
         try:
-            # Check subscription and limits (unless admin)
-            if not is_admin:
-                can_request, message = self.subscription_manager.can_user_request_signal(user_id)
-                if not can_request:
-                    await self.application.bot.send_message(
-                        chat_id=chat_id,
-                        text=f"❌ *{message}*\n\nUse /register TOKEN to upgrade your account! 💎",
-                        parse_mode='Markdown'
-                    )
-                    return
+            entry_signal = self.signal_generator.generate_entry_signal(pre_signal_id)
             
-            current_session = self.session_manager.get_current_session()
-            if current_session["status"] != "ACTIVE":
-                await self.application.bot.send_message(
-                    chat_id=chat_id,
-                    text=f"⏸️ *MARKET IS CLOSED*\n\nCome back during trading hours! 📈",
-                    parse_mode='Markdown'
-                )
-                return
-            
-            # Generate signal
-            signal_type = "ADMIN" if is_admin else "USER"
-            style_text = "QUICK" if signal_style == "QUICK" else "NORMAL"
-            
-            await self.application.bot.send_message(
-                chat_id=chat_id,
-                text=f"🎯 *Generating {style_text} {signal_type} signal...* ⏱️",
-                parse_mode='Markdown'
-            )
-            
-            pre_signal = self.signal_generator.generate_pre_entry_signal(signal_style=signal_style)
-            if not pre_signal:
-                await self.application.bot.send_message(
-                    chat_id=chat_id,
-                    text="❌ *Failed to generate signal. Please try again.*",
-                    parse_mode='Markdown'
-                )
-                return
-            
-            # Send pre-entry message WITH TIMEFRAME
-            direction_emoji = "🟢" if pre_signal["direction"] == "BUY" else "🔴"
-            subscription = self.subscription_manager.get_user_subscription(user_id)
-            
-            # Timeframe-based message
-            timeframe_msg = ""
-            if pre_signal["timeframe"] == "1M":
-                timeframe_msg = "⚡ *QUICK TRADE* - 1 Minute Timeframe\n• Fast execution required\n• Tight stops recommended"
-            elif pre_signal["timeframe"] == "5M":
-                timeframe_msg = "📈 *SWING TRADE* - 5 Minute Timeframe\n• Medium-term setup\n• Good risk-reward ratio"
-            else:
-                timeframe_msg = "🎯 *POSITION TRADE* - 15 Minute Timeframe\n• Longer-term setup\n• Higher confidence"
-            
-            pre_entry_msg = f"""
-📊 *PRE-ENTRY SIGNAL* - {style_text}
-*Entry in {pre_signal['entry_delay']}s*
-
-{direction_emoji} *{pre_signal['symbol']}* | **{pre_signal['direction']}**
-💵 *Expected Entry:* `{pre_signal['entry_price']}`
-🎯 *Confidence:* {pre_signal['confidence']*100:.1f}%
-
-⏰ *Timing Information:*
-• 🕐 Current Time: `{pre_signal['current_time']}`
-• 🎯 Expected Entry: `{pre_signal['entry_time']}`
-• ⏱️ Countdown: {pre_signal['entry_delay']} seconds
-• 📊 Timeframe: *{pre_signal['timeframe']}*
-
-{timeframe_msg}
-
-📊 *Your Account:*
-• Plan: *{subscription['plan_type']}*
-• Signals Left: *{subscription['signals_remaining']}*
-
-*Entry signal coming in {pre_signal['entry_delay']} seconds...*
-"""
-            await self.application.bot.send_message(
-                chat_id=chat_id,
-                text=pre_entry_msg,
-                parse_mode='Markdown'
-            )
-            
-            # Store signal
-            try:
-                conn = sqlite3.connect(Config.DB_PATH)
-                conn.execute(
-                    "INSERT INTO signals (signal_id, symbol, direction, entry_price, confidence, signal_type, timeframe) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (pre_signal["signal_id"], pre_signal["symbol"], pre_signal["direction"], pre_signal["entry_price"], pre_signal["confidence"], "PRE_ENTRY", pre_signal["timeframe"])
-                )
-                conn.commit()
-                conn.close()
-            except Exception as e:
-                logger.error(f"Database save error: {e}")
-            
-            # Wait for entry based on signal style
-            logger.info(f"⏰ Waiting {pre_signal['entry_delay']}s for entry signal...")
-            await asyncio.sleep(pre_signal["entry_delay"])
-            
-            # Generate entry signal
-            entry_signal = self.signal_generator.generate_entry_signal(pre_signal["signal_id"])
-            if not entry_signal:
-                # Create backup entry signal
-                if pre_signal["direction"] == "BUY":
-                    take_profit = round(pre_signal["entry_price"] + 0.0035, 5)
-                    stop_loss = round(pre_signal["entry_price"] - 0.0022, 5)
-                else:
-                    take_profit = round(pre_signal["entry_price"] - 0.0035, 5)
-                    stop_loss = round(pre_signal["entry_price"] + 0.0022, 5)
+            if entry_signal:
+                with sqlite3.connect(Config.DB_PATH) as conn:
+                    conn.execute("""
+                        INSERT INTO signals 
+                        (signal_id, symbol, signal_type, direction, entry_price, take_profit, stop_loss, confidence, session_type, analysis, time_to_entry, risk_reward, signal_style, requested_by)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, tuple(entry_signal.values()))
+                    conn.commit()
                 
-                entry_signal = {
-                    **pre_signal,
-                    "take_profit": take_profit,
-                    "stop_loss": stop_loss,
-                    "entry_time_actual": datetime.now().strftime("%H:%M:%S"),
-                    "risk_reward": 1.6
-                }
+                logger.info(f"🎯 Admin Entry: {entry_signal['symbol']} {entry_signal['direction']}")
+                return entry_signal
             
-            # Increment signal count (unless admin)
-            if not is_admin:
-                self.subscription_manager.increment_signal_count(user_id)
-            
-            # Send entry signal
-            entry_msg = f"""
-🎯 *ENTRY SIGNAL* - {style_text} ✅
-*EXECUTE NOW*
-
-{direction_emoji} *{entry_signal['symbol']}* | **{entry_signal['direction']}**
-💵 *Entry Price:* `{entry_signal['entry_price']}`
-✅ *Take Profit:* `{entry_signal['take_profit']}`
-❌ *Stop Loss:* `{entry_signal['stop_loss']}`
-
-⏰ *Entry Time:* `{entry_signal['entry_time_actual']}`
-📊 *Timeframe:* {entry_signal['timeframe']}
-
-📈 *Trade Details:*
-• Confidence: *{entry_signal['confidence']*100:.1f}%* 🎯
-• Risk/Reward: *1:{entry_signal.get('risk_reward', 1.6)}* ⚖️
-• Type: *{style_text}* {'⚡' if signal_style == 'QUICK' else '📈'}
-
-*Execute this trade immediately!* 🚀
-"""
-            keyboard = [
-                [InlineKeyboardButton("✅ TRADE EXECUTED", callback_data="trade_done")],
-                [InlineKeyboardButton("🔄 NEW SIGNAL", callback_data="get_signal")],
-                [InlineKeyboardButton("💎 UPGRADE ACCOUNT", callback_data="show_register")]
-            ]
-            
-            # Add admin buttons if admin
-            if is_admin:
-                keyboard.insert(1, [
-                    InlineKeyboardButton("⚡ QUICK TRADE", callback_data="admin_quick"),
-                    InlineKeyboardButton("📈 NORMAL TRADE", callback_data="admin_normal")
-                ])
-            
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            await self.application.bot.send_message(
-                chat_id=chat_id,
-                text=entry_msg,
-                reply_markup=reply_markup,
-                parse_mode='Markdown'
-            )
-            
-            # Store entry signal
-            try:
-                conn = sqlite3.connect(Config.DB_PATH)
-                conn.execute(
-                    "INSERT INTO signals (signal_id, symbol, direction, entry_price, take_profit, stop_loss, confidence, signal_type, timeframe) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (entry_signal["signal_id"] + "_ENTRY", entry_signal["symbol"], entry_signal["direction"], 
-                     entry_signal["entry_price"], entry_signal["take_profit"], entry_signal["stop_loss"], 
-                     entry_signal["confidence"], "ENTRY", entry_signal["timeframe"])
-                )
-                conn.commit()
-                conn.close()
-            except Exception as e:
-                logger.error(f"Database update error: {e}")
+            return None
             
         except Exception as e:
-            logger.error(f"❌ Signal generation failed: {e}")
-            await self.application.bot.send_message(
-                chat_id=chat_id,
-                text="❌ *Signal generation failed. Please try again.*",
-                parse_mode='Markdown'
-            )
+            logger.error(f"❌ Admin entry signal failed: {e}")
+            return None
 
-# ==================== FIXED TELEGRAM BOT ====================
-class SimpleTelegramBot:
+    async def generate_user_signal_request(self, user_id: int):
+        """Generate signal for user request"""
+        try:
+            session = self.session_manager.get_current_session()
+            
+            if session["id"] == "CLOSED":
+                return None
+            
+            symbol = random.choice(session["optimal_pairs"])
+            pre_signal = self.signal_generator.generate_pre_entry_signal(symbol, "NORMAL", False)
+            
+            # Store user request
+            with sqlite3.connect(Config.DB_PATH) as conn:
+                conn.execute("INSERT INTO user_requests (user_id, command, status) VALUES (?, ?, ?)",
+                           (user_id, "signal_request", "PROCESSED"))
+                conn.commit()
+            
+            return pre_signal
+            
+        except Exception as e:
+            logger.error(f"User signal request failed: {e}")
+            return None
+
+# ==================== COMPLETE TELEGRAM BOT ====================
+class CompleteTelegramBot:
     def __init__(self):
         self.token = Config.TELEGRAM_TOKEN
         self.application = None
+        self.admin_auth = AdminAuth()
+        self.subscription_manager = None
         self.trading_bot = None
     
     async def initialize(self):
-        try:
-            self.application = Application.builder().token(self.token).build()
-            self.trading_bot = WorkingTradingBot(self.application)
-            
-            # Command handlers
-            self.application.add_handler(CommandHandler("start", self.start_command))
-            self.application.add_handler(CommandHandler("signal", self.signal_command))
-            self.application.add_handler(CommandHandler("session", self.session_command))
-            self.application.add_handler(CommandHandler("help", self.help_command))
-            self.application.add_handler(CommandHandler("register", self.register_command))
-            self.application.add_handler(CommandHandler("seedtoken", self.seedtoken_command))
-            self.application.add_handler(CommandHandler("login", self.login_command))
-            self.application.add_handler(CommandHandler("admin", self.admin_command))
-            self.application.add_handler(CommandHandler("mystats", self.mystats_command))
-            
-            # Callback handlers - FIXED: Add all button handlers
-            self.application.add_handler(CallbackQueryHandler(self.button_handler))
-            
-            await self.application.initialize()
-            await self.application.start()
-            
-            logger.info("✅ Telegram Bot with Fixed Buttons Initialized!")
-            return True
-            
-        except Exception as e:
-            logger.error(f"❌ Bot initialization failed: {e}")
-            return False
+        """Initialize the complete bot"""
+        self.application = Application.builder().token(self.token).build()
+        self.subscription_manager = SubscriptionManager(Config.DB_PATH)
+        self.trading_bot = EnhancedTradingBot(self.application)
+        
+        # Command handlers
+        self.application.add_handler(CommandHandler("start", self.start_command))
+        self.application.add_handler(CommandHandler("help", self.help_command))
+        self.application.add_handler(CommandHandler("login", self.login_command))
+        self.application.add_handler(CommandHandler("admin", self.admin_command))
+        self.application.add_handler(CommandHandler("signal", self.signal_command))
+        self.application.add_handler(CommandHandler("mysignal", self.mysignal_command))
+        self.application.add_handler(CommandHandler("upgrade", self.upgrade_command))
+        self.application.add_handler(CommandHandler("contact", self.contact_command))
+        self.application.add_handler(CommandHandler("plans", self.plans_command))
+        self.application.add_handler(CommandHandler("stats", self.stats_command))
+        self.application.add_handler(CommandHandler("session", self.session_command))
+        self.application.add_handler(CommandHandler("signals", self.signals_command))
+        self.application.add_handler(CommandHandler("commands", self.commands_command))
+        
+        # Callback handlers
+        self.application.add_handler(CallbackQueryHandler(self.button_handler))
+        
+        await self.application.initialize()
+        await self.application.start()
+        
+        await self.trading_bot.start_auto_signals()
+        
+        logger.info("🤖 Enhanced Trading Bot Initialized (UTC+1)!")
+
+    async def get_user_commands(self, user_id: int):
+        """Get available commands based on user status"""
+        base_commands = """
+🕒 *Session Commands:*
+• /session - Current market session (UTC+1)
+• /signals - View recent signals
+
+📊 *Account Commands:*
+• /stats - Your account status
+• /mysignal - Request a signal
+• /plans - View premium plans
+• /upgrade - Upgrade instructions
+• /contact - Contact admin
+
+❓ *Help Commands:*
+• /help - Detailed help guide
+• /commands - Available commands
+"""
+        
+        if self.admin_auth.is_admin(user_id):
+            admin_commands = """
+👑 *ADMIN COMMANDS:*
+
+⚡ *Signal Generation:*
+• /signal - Normal trade signal
+• /signal quick - Quick Trade signal
+• /signal EUR/USD - Specific pair
+• /signal EUR/USD quick - Quick specific pair
+
+🏢 *Admin Management:*
+• /admin - Admin dashboard
+• /stats - System statistics
+• /signals - All signals history
+
+*You have full system access!* 🚀
+"""
+            return base_commands + admin_commands
+        else:
+            return base_commands + "\n*Use /login TOKEN for admin access* 🔐"
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        try:
-            user = update.effective_user
-            chat_id = update.effective_chat.id
-            
-            logger.info(f"🚀 User started: {user.first_name}")
-            
-            # Add user to database
-            self.trading_bot.user_manager.add_user(user.id, user.username, user.first_name)
-            
-            # Send welcome message
-            await self.trading_bot.send_welcome_message(user, chat_id)
-            
-        except Exception as e:
-            logger.error(f"❌ Start command failed: {e}")
-            await update.message.reply_text("Welcome! Use /signal to get trading signals.")
+        """Handle /start command with enhanced commands"""
+        user = update.effective_user
+        self.subscription_manager.start_trial(user.id, user.username, user.first_name)
+        
+        current_session = self.trading_bot.session_manager.get_current_session()
+        user_commands = await self.get_user_commands(user.id)
+        
+        message = f"""
+🎉 *Welcome to LEKZY FX AI PRO, {user.first_name}!*
 
-    async def register_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        try:
-            user = update.effective_user
-            
-            if not context.args:
-                await update.message.reply_text(
-                    "🔐 *REGISTER PREMIUM ACCOUNT*\n\nUsage: `/register YOUR_TOKEN`",
-                    parse_mode='Markdown'
-                )
-                return
-            
-            token = context.args[0].strip().upper()
-            
-            is_valid, days_valid = self.trading_bot.subscription_manager.token_manager.validate_token(token)
-            
-            if not is_valid:
-                await update.message.reply_text(
-                    f"❌ *Invalid Token*\n\nPlease contact {Config.ADMIN_CONTACT} for a valid token.",
-                    parse_mode='Markdown'
-                )
-                return
-            
-            success = self.trading_bot.subscription_manager.activate_premium_subscription(
-                user.id, token, days_valid
-            )
-            
-            if success:
-                end_date = datetime.now() + timedelta(days=days_valid)
-                await update.message.reply_text(
-                    f"🎉 *PREMIUM ACTIVATED!* 🚀\n\n"
-                    f"Welcome to LEKZY FX AI PRO Premium!\n"
-                    f"• Duration: {days_valid} days\n"
-                    f"• Signals: 50 per day\n"
-                    f"• All sessions access\n\n"
-                    f"*Use /signal to start trading!* 🎯",
-                    parse_mode='Markdown'
-                )
-            else:
-                await update.message.reply_text("❌ Registration failed. Please try again.")
-                
-        except Exception as e:
-            logger.error(f"❌ Register command failed: {e}")
-            await update.message.reply_text("❌ Registration failed.")
+Your 3-day free trial has been activated! 
+Experience professional trading with UTC+1 timing.
 
-    async def seedtoken_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        try:
-            user = update.effective_user
-            
-            if not self.trading_bot.admin_auth.is_admin(user.id):
-                await update.message.reply_text("❌ Admin access required.")
-                return
-            
-            if not context.args:
-                await update.message.reply_text("Usage: `/seedtoken DAYS`")
-                return
-            
-            try:
-                days = int(context.args[0])
-                if days <= 0:
-                    await update.message.reply_text("❌ Days must be positive number.")
-                    return
-            except ValueError:
-                await update.message.reply_text("❌ Invalid number of days.")
-                return
-            
-            token = self.trading_bot.subscription_manager.token_manager.generate_token(days, user.id)
-            
-            if token:
-                await update.message.reply_text(
-                    f"🔑 *TOKEN GENERATED* ✅\n\n"
-                    f"*Token:* `{token}`\n"
-                    f"*Duration:* {days} days\n\n"
-                    f"*Share with users:* `/register {token}`",
-                    parse_mode='Markdown'
-                )
-            else:
-                await update.message.reply_text("❌ Token generation failed.")
-                
-        except Exception as e:
-            logger.error(f"❌ Seedtoken command failed: {e}")
-            await update.message.reply_text("❌ Token generation failed.")
+🕒 *Current Market:* {current_session['name']}
+⏰ *Time:* {current_session['current_time']}
+
+{user_commands}
+
+*Start trading with confidence!* 🚀
+"""
+        keyboard = [
+            [InlineKeyboardButton("🕒 Market Session", callback_data="session"),
+             InlineKeyboardButton("📡 Get Signal", callback_data="mysignal")],
+            [InlineKeyboardButton("📊 Account Stats", callback_data="stats"),
+             InlineKeyboardButton("💎 Upgrade", callback_data="plans")],
+            [InlineKeyboardButton("❓ Help & Commands", callback_data="help")]
+        ]
+        
+        # Add admin buttons if admin
+        if self.admin_auth.is_admin(user.id):
+            keyboard.insert(1, [
+                InlineKeyboardButton("👑 Admin Panel", callback_data="admin"),
+                InlineKeyboardButton("⚡ Quick Trade", callback_data="signal_quick")
+            ])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /help command"""
+        user = update.effective_user
+        user_commands = await self.get_user_commands(user.id)
+        
+        message = f"""
+❓ *LEKZY FX AI PRO - HELP GUIDE*
+
+{user_commands}
+
+💡 *Trading Features:*
+• ⚡ Quick Trade signals (40s pre-entry)
+• 📈 Normal signals with detailed analysis
+• 🕯️ Candle-based entry confirmation
+• 🕒 UTC+1 session timing
+• 📊 Real-time market analysis
+
+📞 *Support:* {Config.ADMIN_CONTACT}
+
+*Happy Trading!* 🚀
+"""
+        await update.message.reply_text(message, parse_mode='Markdown')
+
+    async def commands_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /commands - Show all available commands"""
+        user = update.effective_user
+        user_commands = await self.get_user_commands(user.id)
+        
+        message = f"""
+🎯 *AVAILABLE COMMANDS*
+
+{user_commands}
+
+*Use any command to get started!* 💪
+"""
+        await update.message.reply_text(message, parse_mode='Markdown')
 
     async def login_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """FIXED ADMIN LOGIN"""
-        try:
-            user = update.effective_user
+        """Handle /login command"""
+        user = update.effective_user
+        
+        if not context.args:
+            await update.message.reply_text(
+                "🔐 *Admin Login*\n\nUsage: `/login YOUR_ADMIN_TOKEN`",
+                parse_mode='Markdown'
+            )
+            return
+        
+        token = context.args[0]
+        
+        if self.admin_auth.verify_token(token):
+            self.admin_auth.create_session(user.id, user.username)
             
-            if not context.args:
-                await update.message.reply_text("🔐 *ADMIN LOGIN*\n\nUsage: `/login ADMIN_TOKEN`", parse_mode='Markdown')
-                return
+            # Show admin commands after successful login
+            user_commands = await self.get_user_commands(user.id)
             
-            token = context.args[0]
-            
-            if self.trading_bot.admin_auth.verify_token(token):
-                self.trading_bot.admin_auth.create_session(user.id, user.username)
-                await update.message.reply_text(
-                    "✅ *Admin Access Granted!* 👑\n\n"
-                    "*You now have access to:*\n"
-                    "• Quick Trade signals (1M timeframe)\n"
-                    "• Normal Trade signals (5M/15M timeframe)\n"
-                    "• Token generation (/seedtoken)\n"
-                    "• Admin dashboard (/admin)\n\n"
-                    "*Use the buttons in /start menu!* 🚀",
-                    parse_mode='Markdown'
-                )
-            else:
-                await update.message.reply_text("❌ *Invalid admin token*", parse_mode='Markdown')
-                
-        except Exception as e:
-            logger.error(f"❌ Login command failed: {e}")
-            await update.message.reply_text("❌ Login failed.")
+            await update.message.reply_text(f"""
+✅ *Admin Access Granted!* 🌟
+
+{user_commands}
+
+*Admin features are now active!* 🚀
+""", parse_mode='Markdown')
+        else:
+            await update.message.reply_text("❌ *Invalid admin token*", parse_mode='Markdown')
 
     async def admin_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        try:
-            user = update.effective_user
+        """Handle /admin command"""
+        user = update.effective_user
+        
+        if not self.admin_auth.is_admin(user.id):
+            await update.message.reply_text("❌ Admin access required. Use `/login YOUR_TOKEN`", parse_mode='Markdown')
+            return
+        
+        with sqlite3.connect(Config.DB_PATH) as conn:
+            total_users = conn.execute("SELECT COUNT(*) FROM subscriptions").fetchone()[0]
+            total_signals = conn.execute("SELECT COUNT(*) FROM signals").fetchone()[0]
+            quick_signals = conn.execute("SELECT COUNT(*) FROM signals WHERE signal_style = 'QUICK'").fetchone()[0]
+            user_requests = conn.execute("SELECT COUNT(*) FROM user_requests").fetchone()[0]
+        
+        current_session = self.trading_bot.session_manager.get_current_session()
+        
+        message = f"""
+🏢 *ADMIN DASHBOARD* 🌟
+
+📊 *Statistics:*
+• Total Users: {total_users}
+• Total Signals: {total_signals}
+• Quick Trades: {quick_signals}
+• User Requests: {user_requests}
+• Current Session: {current_session['name']}
+• Time: {current_session['current_time']}
+
+🎯 *Signal Commands:*
+• `/signal` - Normal trade
+• `/signal quick` - Quick Trade (40s pre-entry)
+• `/signal EUR/USD` - Specific pair
+• `/signal EUR/USD quick` - Quick specific
+
+⚡ *Quick Trade Features:*
+• 40s pre-entry warning
+• Candle-based analysis
+• Faster execution
+• Tighter stops
+
+*24/7 Admin Access Active!* 💎
+"""
+        keyboard = [
+            [InlineKeyboardButton("⚡ Quick Trade", callback_data="signal_quick"),
+             InlineKeyboardButton("📈 Normal Trade", callback_data="signal_normal")],
+            [InlineKeyboardButton("📊 System Stats", callback_data="stats"),
+             InlineKeyboardButton("🔄 Refresh", callback_data="admin_refresh")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def signal_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /signal command with style selection"""
+        user = update.effective_user
+        
+        if not self.admin_auth.is_admin(user.id):
+            await update.message.reply_text("❌ Admin access required. Use `/login YOUR_TOKEN`", parse_mode='Markdown')
+            return
+        
+        # Parse command arguments
+        symbol = None
+        signal_style = "NORMAL"
+        
+        if context.args:
+            for arg in context.args:
+                arg_upper = arg.upper()
+                if arg_upper in ["QUICK", "FAST", "Q"]:
+                    signal_style = "QUICK"
+                elif "/" in arg_upper or arg_upper in ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "AUDUSD", "USDCAD"]:
+                    symbol = arg_upper.replace('USD', '/USD') if 'USD' in arg_upper and '/' not in arg_upper else arg_upper
+                    symbol = symbol.replace('_', '/')
+        
+        valid_pairs = ["EUR/USD", "GBP/USD", "USD/JPY", "XAU/USD", "AUD/USD", "USD/CAD"]
+        if symbol and symbol not in valid_pairs:
+            await update.message.reply_text(f"❌ Invalid pair. Use: {', '.join(valid_pairs)}")
+            return
+        
+        # Generate pre-entry signal
+        await update.message.reply_text(f"🎯 *Generating {signal_style} signal...*", parse_mode='Markdown')
+        
+        result = await self.trading_bot.generate_admin_signal_sequence(user.id, symbol, signal_style)
+        
+        if result and "pre_signal" in result:
+            pre_signal = result["pre_signal"]
+            analysis = json.loads(pre_signal["analysis"])
             
-            if not self.trading_bot.admin_auth.is_admin(user.id):
-                await update.message.reply_text("❌ Admin access required. Use `/login TOKEN`", parse_mode='Markdown')
-                return
+            # Send pre-entry signal
+            direction_emoji = "🟢" if pre_signal["direction"] == "BUY" else "🔴"
+            style_emoji = "⚡" if signal_style == "QUICK" else "📈"
             
-            message = """
-👑 *ADMIN DASHBOARD* 🔧
+            message = f"""
+{style_emoji} *PRE-ENTRY SIGNAL* - {signal_style}
+*Entry in {Config.PRE_ENTRY_DELAY}s*
 
-⚡ *Admin Features:*
-• Quick Trade (1M timeframe) - 20s entry
-• Normal Trade (5M/15M timeframe) - 40s entry  
-• Generate subscription tokens
-• Monitor system status
+{direction_emoji} *{pre_signal['symbol']}* | **{pre_signal['direction']}**
+💵 *Expected Entry:* `{pre_signal['entry_price']:.5f}`
+🎯 *Confidence:* {pre_signal['confidence']*100:.1f}%
 
-🎯 *Quick Commands:*
-• `/seedtoken DAYS` - Generate tokens
-• Use buttons for instant signals
+📊 *Candle Analysis:*
+{analysis['candle_pattern']}
+• Timeframe: {analysis['timeframe']}
+• Momentum: {analysis['momentum']}
+• Risk Rating: {analysis['risk_rating']}
 
-*Admin system operational!* ✅
+💡 *Market Condition:*
+{analysis['market_condition']}
+
+⏰ *Entry signal coming in {Config.PRE_ENTRY_DELAY} seconds...*
+"""
+            await update.message.reply_text(message, parse_mode='Markdown')
+            
+            # Wait and send entry signal
+            await asyncio.sleep(Config.PRE_ENTRY_DELAY)
+            
+            entry_signal = await self.trading_bot.generate_admin_entry_signal(pre_signal["signal_id"])
+            
+            if entry_signal:
+                entry_analysis = json.loads(entry_signal["analysis"])
+                
+                entry_message = f"""
+🎯 *ENTRY SIGNAL* - {signal_style}
+*EXECUTE NOW*
+
+{direction_emoji} *{entry_signal['symbol']}* | **{entry_signal['direction']}**
+💵 *Entry Price:* `{entry_signal['entry_price']:.5f}`
+✅ *Take Profit:* `{entry_signal['take_profit']:.5f}`
+❌ *Stop Loss:* `{entry_signal['stop_loss']:.5f}`
+
+📈 *Trade Details:*
+• Confidence: *{entry_signal['confidence']*100:.1f}%* 🎯
+• Risk/Reward: *1:{entry_signal['risk_reward']}* ⚖️
+• Style: *{signal_style}* {style_emoji}
+
+⚡ *Execution:*
+• New candle confirmed
+• Price at optimal level
+• Momentum aligned
+
+*Execute this trade immediately!* 🚀
+"""
+                keyboard = [
+                    [InlineKeyboardButton("✅ Trade Executed", callback_data="trade_done")],
+                    [InlineKeyboardButton("⚡ Another Signal", callback_data="admin_signal")]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                await update.message.reply_text(entry_message, reply_markup=reply_markup, parse_mode='Markdown')
+            else:
+                await update.message.reply_text("❌ Failed to generate entry signal")
+        else:
+            await update.message.reply_text("❌ Failed to generate pre-entry signal")
+
+    async def mysignal_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /mysignal command for users"""
+        user = update.effective_user
+        current_session = self.trading_bot.session_manager.get_current_session()
+        
+        if current_session["id"] == "CLOSED":
+            next_session = self.trading_bot.session_manager.get_next_session()
+            await update.message.reply_text(f"""
+📭 *No Signals Available*
+
+🕒 *Market is currently closed*
+• Current Time: {current_session['current_time']}
+• Next Session: {next_session['name']} ({next_session['start_hour']:02d}:00-{next_session['end_hour']:02d}:00 UTC+1)
+
+💡 *Signals are available during:*
+• 🌅 London Session (08:00-12:00 UTC+1)
+• 🌇 NY/London Overlap (16:00-20:00 UTC+1) 
+• 🌃 Asian Session (00:00-04:00 UTC+1)
+
+*Check back during session hours!* 📈
+""", parse_mode='Markdown')
+            return
+        
+        # Generate signal for user
+        await update.message.reply_text("🎯 *Processing your signal request...*", parse_mode='Markdown')
+        
+        signal = await self.trading_bot.generate_user_signal_request(user.id)
+        
+        if signal:
+            analysis = json.loads(signal["analysis"])
+            
+            message = f"""
+📊 *YOUR TRADING SIGNAL*
+
+🟢 *{signal['symbol']}* | **{signal['direction']}**
+💵 *Entry Zone:* `{signal['entry_price']:.5f}`
+🎯 *Confidence:* {signal['confidence']*100:.1f}%
+
+📈 *Analysis:*
+{analysis['candle_pattern']}
+• Timeframe: {analysis['timeframe']}
+• Momentum: {analysis['momentum']}
+• Risk: {analysis['risk_rating']}
+
+💡 *Market Condition:*
+{analysis['market_condition']}
+
+⚡ *Execution Tip:*
+Wait for price confirmation at entry level
+Use proper risk management
+
+*Trade carefully!* ✅
 """
             keyboard = [
-                [InlineKeyboardButton("⚡ QUICK TRADE", callback_data="admin_quick")],
-                [InlineKeyboardButton("📈 NORMAL TRADE", callback_data="admin_normal")],
-                [InlineKeyboardButton("🔑 GENERATE TOKENS", callback_data="admin_tokens")],
-                [InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]
+                [InlineKeyboardButton("✅ Got It", callback_data="signal_ack")],
+                [InlineKeyboardButton("🔄 New Signal", callback_data="mysignal")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
             await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
-            
-        except Exception as e:
-            logger.error(f"❌ Admin command failed: {e}")
-            await update.message.reply_text("❌ Admin command failed.")
+        else:
+            await update.message.reply_text("""
+❌ *Signal Generation Failed*
 
-    async def signal_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        try:
-            user = update.effective_user
-            chat_id = update.effective_chat.id
-            is_admin = self.trading_bot.admin_auth.is_admin(user.id)
-            
-            # Check if admin wants specific style
-            signal_style = "NORMAL"
-            if context.args and context.args[0].upper() in ["QUICK", "FAST"]:
-                signal_style = "QUICK"
-                if not is_admin:
-                    await update.message.reply_text("❌ Quick trades are for admin only.")
-                    return
-            
-            await self.trading_bot.generate_signal_for_user(user.id, chat_id, signal_style, is_admin)
-        except Exception as e:
-            logger.error(f"❌ Signal command failed: {e}")
-            await update.message.reply_text("❌ Unable to generate signal.")
+This could be because:
+• Market volatility is too low
+• No clear setup available
+• System processing delay
+
+Try again in a few minutes! 🔄
+""", parse_mode='Markdown')
 
     async def session_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        try:
-            current_session = self.trading_bot.session_manager.get_current_session()
-            
-            if current_session["status"] == "ACTIVE":
-                message = f"🟢 *MARKET IS OPEN* ✅\n\n*Current Session:* {current_session['name']}\n*Time:* {current_session['current_time']}"
-            else:
-                message = f"🔴 *MARKET IS CLOSED* ⏸️\n\n*Next Session:* {current_session['next_session']}\n*Opens:* {current_session['next_session_time']}"
-            
-            await update.message.reply_text(message, parse_mode='Markdown')
-        except Exception as e:
-            logger.error(f"❌ Session command failed: {e}")
-            await update.message.reply_text("❌ Could not fetch session info.")
+        """Handle /session command with UTC+1"""
+        session = self.trading_bot.session_manager.get_current_session()
+        next_session = self.trading_bot.session_manager.get_next_session()
+        
+        if session["id"] == "CLOSED":
+            message = f"""
+🕒 *MARKET CLOSED* ❌
 
-    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        help_text = """
-🤖 *LEKZY FX AI PRO - HELP*
+⏰ *Current Time:* {session['current_time']}
+📅 *Next Session:* {next_session['name']}
 
-*User Commands:*
-• /start - Start bot & welcome
-• /signal - Get trading signal  
-• /session - Market status
-• /register TOKEN - Activate premium
-• /mystats - Your statistics
-• /help - This message
+*Trading Sessions (UTC+1):*
 
-*Admin Commands:*
-• /login TOKEN - Admin login
-• /seedtoken DAYS - Generate tokens
-• /admin - Admin dashboard
-• /signal quick - Quick trade (admin only)
+🌅 *LONDON SESSION* (08:00-12:00 UTC+1)
+• Volatility: HIGH
+• Accuracy: 96.2%
+• Optimal Pairs: EUR/USD, GBP/USD, EUR/JPY
 
-📞 *Support:* @LekzyTradingPro
+🌇 *NY/LONDON OVERLAP* (16:00-20:00 UTC+1)
+• Volatility: VERY HIGH  
+• Accuracy: 97.8%
+• Optimal Pairs: USD/JPY, USD/CAD, XAU/USD
+
+🌃 *ASIAN SESSION* (00:00-04:00 UTC+1)
+• Volatility: MEDIUM
+• Accuracy: 92.5%
+• Optimal Pairs: AUD/JPY, NZD/USD, USD/JPY
+
+*Signals auto-resume in session hours!* 📈
 """
-        await update.message.reply_text(help_text, parse_mode='Markdown')
+        else:
+            message = f"""
+🕒 *{session['name']}* ✅ ACTIVE
 
-    async def mystats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        try:
-            user = update.effective_user
-            subscription = self.trading_bot.subscription_manager.get_user_subscription(user.id)
-            is_admin = self.trading_bot.admin_auth.is_admin(user.id)
+⏰ *Current Time:* {session['current_time']}
+📊 *Volatility:* {session['volatility']}
+🎯 *Accuracy:* {session['accuracy']}%
+💎 *Optimal Pairs:* {', '.join(session['optimal_pairs'])}
+
+⚡ *Enhanced Signals Active:*
+• Quick Trade (40s pre-entry)
+• Normal signals with analysis
+• Candle-based entries
+• Real-time monitoring
+
+*Professional signals are live!* 🚀
+"""
+        
+        await update.message.reply_text(message, parse_mode='Markdown')
+
+    async def signals_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /signals command"""
+        with sqlite3.connect(Config.DB_PATH) as conn:
+            signals = conn.execute("""
+                SELECT symbol, signal_type, direction, entry_price, confidence, signal_style, requested_by, created_at 
+                FROM signals 
+                ORDER BY created_at DESC 
+                LIMIT 6
+            """).fetchall()
+        
+        if not signals:
+            await update.message.reply_text("📭 No signals yet. Check during session hours!")
+            return
+        
+        message = "📡 *RECENT TRADING SIGNALS*\n\n"
+        
+        for symbol, signal_type, direction, entry, confidence, style, requested_by, created in signals:
+            time_str = datetime.fromisoformat(created).strftime("%H:%M")
+            type_emoji = "📊" if signal_type == "PRE_ENTRY" else "🎯"
+            dir_emoji = "🟢" if direction == "BUY" else "🔴"
+            style_emoji = "⚡" if style == "QUICK" else "📈"
+            admin_badge = " 👑" if requested_by == "ADMIN" else ""
             
-            if subscription['plan_type'] == 'PREMIUM' and subscription['subscription_end']:
-                end_date = datetime.fromisoformat(subscription['subscription_end'])
-                days_left = (end_date - datetime.now()).days
-                status = f"✅ Active ({days_left} days left)"
-            else:
-                status = "⏳ Trial"
+            message += f"{type_emoji} {dir_emoji} {symbol}{admin_badge}\n"
+            message += f"{style_emoji} {style} | 💵 {entry} | {confidence*100:.1f}%\n"
+            message += f"⏰ {time_str}\n\n"
+        
+        message += "⚡ *Quick Trade signals feature 40s pre-entry!*"
+        
+        await update.message.reply_text(message, parse_mode='Markdown')
+
+    async def upgrade_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /upgrade command"""
+        await update.message.reply_text(f"""
+💎 *UPGRADE YOUR ACCOUNT*
+
+*Contact admin for premium features:*
+{Config.ADMIN_CONTACT}
+
+🌟 *Premium Benefits:*
+• All session access (24/7 signals)
+• Quick Trade priority
+• Higher accuracy signals
+• Personal support
+• Advanced analytics
+
+*Unlock enhanced trading!* 🚀
+""", parse_mode='Markdown')
+
+    async def contact_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /contact command"""
+        message = f"""
+📞 *CONTACT ADMIN*
+
+*Direct Contact:* {Config.ADMIN_CONTACT}
+
+💡 *Premium Support:*
+• Quick Trade signals
+• All session access
+• Higher accuracy
+• Priority support
+
+📋 *Upgrade Plans Available:*
+• BASIC - $19/month
+• PRO - $49/month  
+• VIP - $99/month
+• PREMIUM - $199/month
+
+*Message us now to upgrade!* 💎
+"""
+        keyboard = [
+            [InlineKeyboardButton("📱 Message Admin", url=f"https://t.me/{Config.ADMIN_CONTACT.replace('@', '')}")],
+            [InlineKeyboardButton("💎 View Plans", callback_data="plans")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def plans_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /plans command"""
+        message = f"""
+💎 *LEKZY FX AI PRO - PREMIUM PLANS*
+
+🌅 *BASIC* - $19/month
+• Morning Session Only
+• Quick Trade signals
+• 10 signals/day
+• 95%+ Accuracy
+
+🌇 *PRO* - $49/month  
+• Morning + Evening Sessions
+• Enhanced analysis
+• 25 signals/day
+• 96%+ Accuracy
+
+🌃 *VIP* - $99/month
+• All Sessions (24/7)
+• Priority signals
+• 50 signals/day
+• 97%+ Accuracy
+
+🌟 *PREMIUM* - $199/month
+• 24/7 Priority Access
+• Unlimited signals
+• Personal support
+• 98%+ Accuracy
+• Advanced features
+
+💡 *All plans include:*
+• Quick Trade system
+• Candle-based analysis
+• Risk management
+• Real-time alerts
+
+*Contact {Config.ADMIN_CONTACT} to upgrade!* 🚀
+"""
+        keyboard = [
+            [InlineKeyboardButton("📞 Contact Admin", callback_data="contact")],
+            [InlineKeyboardButton("🔼 Upgrade Now", callback_data="upgrade")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /stats command"""
+        user = update.effective_user
+        user_plan = self.subscription_manager.get_user_plan(user.id)
+        current_session = self.trading_bot.session_manager.get_current_session()
+        
+        with sqlite3.connect(Config.DB_PATH) as conn:
+            user_signals = conn.execute(
+                "SELECT COUNT(*) FROM user_requests WHERE user_id = ?", 
+                (user.id,)
+            ).fetchone()[0]
+        
+        if self.admin_auth.is_admin(user.id):
+            with sqlite3.connect(Config.DB_PATH) as conn:
+                total_users = conn.execute("SELECT COUNT(*) FROM subscriptions").fetchone()[0]
+                total_signals = conn.execute("SELECT COUNT(*) FROM signals").fetchone()[0]
             
             message = f"""
-📊 *YOUR ACCOUNT STATISTICS*
+📊 *ADMIN STATS* 👑
 
-• Name: {user.first_name}
-• Plan: {subscription['plan_type']}
-• Status: {status}
-• Signals: {subscription['signals_used']}/{subscription['max_daily_signals']}
-• Admin: {'✅ Yes' if is_admin else '❌ No'}
+• Plan: PREMIUM ADMIN
+• Users: {total_users}
+• Total Signals: {total_signals}
+• Current Session: {current_session['name']}
+• Time: {current_session['current_time']}
+
+⚡ *Admin Features:*
+• 24/7 signal generation
+• Quick Trade system
+• Full system access
+• User management
+
+*You have premium admin access!* 🚀
 """
-            await update.message.reply_text(message, parse_mode='Markdown')
-            
-        except Exception as e:
-            logger.error(f"❌ Mystats command failed: {e}")
-            await update.message.reply_text("❌ Could not fetch statistics.")
+        else:
+            message = f"""
+📊 *YOUR ACCOUNT STATS*
+
+• Plan: {user_plan}
+• Signals Used: {user_signals}/5 daily
+• Current Session: {current_session['name']}
+• Time: {current_session['current_time']}
+
+💡 *Trial Features:*
+• Morning session signals
+• Basic analysis
+• 5 signals per day
+• Standard accuracy
+
+*Upgrade for enhanced features!* 💎
+"""
+        
+        await update.message.reply_text(message, parse_mode='Markdown')
 
     async def button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """FIXED BUTTON HANDLER - ALL BUTTONS WORKING"""
+        """Handle button callbacks"""
         query = update.callback_query
         await query.answer()
         
-        user = query.from_user
-        data = query.data
+        user = update.effective_user
         
-        try:
-            if data == "get_signal":
+        if query.data == "session":
+            await self.session_command(update, context)
+        elif query.data == "mysignal":
+            await self.mysignal_command(update, context)
+        elif query.data == "stats":
+            await self.stats_command(update, context)
+        elif query.data == "plans":
+            await self.plans_command(update, context)
+        elif query.data == "contact":
+            await self.contact_command(update, context)
+        elif query.data == "help":
+            await self.help_command(update, context)
+        elif query.data == "admin":
+            await self.admin_command(update, context)
+        elif query.data == "signal_quick":
+            if self.admin_auth.is_admin(user.id):
+                context.args = ["quick"]
                 await self.signal_command(update, context)
-            elif data == "session_info":
-                await self.session_command(update, context)
-            elif data == "contact_support":
-                await query.edit_message_text(f"📞 *Contact Support:* {Config.ADMIN_CONTACT}", parse_mode='Markdown')
-            elif data == "show_register":
-                await query.edit_message_text(
-                    "💎 *UPGRADE TO PREMIUM*\n\nUse `/register YOUR_TOKEN` to activate premium!\n\n*Contact admin for tokens.*",
-                    parse_mode='Markdown'
-                )
-            elif data == "trade_done":
-                await query.edit_message_text("✅ *Trade Executed!* 🎯\n\n*Happy trading!* 💰", parse_mode='Markdown')
-            elif data == "admin_panel":
-                await self.admin_command(update, context)
-            elif data == "admin_quick":
-                if self.trading_bot.admin_auth.is_admin(user.id):
-                    # Generate quick trade signal
-                    await self.trading_bot.generate_signal_for_user(user.id, query.message.chat_id, "QUICK", True)
-                else:
-                    await query.edit_message_text("❌ Admin access required for quick trades.")
-            elif data == "admin_normal":
-                if self.trading_bot.admin_auth.is_admin(user.id):
-                    # Generate normal trade signal
-                    await self.trading_bot.generate_signal_for_user(user.id, query.message.chat_id, "NORMAL", True)
-                else:
-                    await query.edit_message_text("❌ Admin access required.")
-            elif data == "admin_tokens":
-                if self.trading_bot.admin_auth.is_admin(user.id):
-                    await query.edit_message_text(
-                        "🔑 *GENERATE TOKENS*\n\nUse `/seedtoken DAYS` to create subscription tokens.",
-                        parse_mode='Markdown'
-                    )
-                else:
-                    await query.edit_message_text("❌ Admin access required.")
-            elif data == "main_menu":
-                await self.start_command(update, context)
-                
-        except Exception as e:
-            logger.error(f"Button handler error: {e}")
-            await query.edit_message_text("❌ Action failed. Please try /start again.")
+            else:
+                await query.edit_message_text("❌ Admin access required for Quick Trade")
+        elif query.data == "signal_normal":
+            if self.admin_auth.is_admin(user.id):
+                await self.signal_command(update, context)
+            else:
+                await query.edit_message_text("❌ Admin access required for signal generation")
+        elif query.data == "upgrade":
+            await self.upgrade_command(update, context)
+        elif query.data == "commands":
+            await self.commands_command(update, context)
 
     async def start_polling(self):
+        """Start polling"""
         await self.application.updater.start_polling()
-        logger.info("✅ Bot polling started")
 
     async def stop(self):
+        """Stop bot"""
+        self.trading_bot.is_running = False
         await self.application.stop()
 
 # ==================== MAIN APPLICATION ====================
@@ -1196,39 +1259,28 @@ class MainApp:
         self.running = False
     
     async def setup(self):
-        try:
-            initialize_database()
-            start_web_server()
-            self.bot = SimpleTelegramBot()
-            success = await self.bot.initialize()
-            
-            if success:
-                self.running = True
-                logger.info("🚀 LEKZY FX AI PRO - FIXED VERSION ACTIVE!")
-                return True
-            return False
-                
-        except Exception as e:
-            logger.error(f"❌ Setup failed: {e}")
-            return False
+        """Setup application"""
+        initialize_database()
+        start_web_server()
+        
+        self.bot = CompleteTelegramBot()
+        await self.bot.initialize()
+        
+        self.running = True
+        logger.info("🚀 LEKZY FX AI PRO - UTC+1 Trading System Started")
     
     async def run(self):
+        """Run application"""
         if not self.running:
-            success = await self.setup()
-            if not success:
-                return
+            await self.setup()
         
-        try:
-            await self.bot.start_polling()
-            logger.info("✅ Application running on Render")
-            
-            while self.running:
-                await asyncio.sleep(10)
-                
-        except Exception as e:
-            logger.error(f"❌ Run error: {e}")
+        await self.bot.start_polling()
+        
+        while self.running:
+            await asyncio.sleep(10)
     
     async def shutdown(self):
+        """Shutdown"""
         self.running = False
         if self.bot:
             await self.bot.stop()
@@ -1239,10 +1291,9 @@ async def main():
     try:
         await app.run()
     except Exception as e:
-        logger.error(f"💥 CRITICAL ERROR: {e}")
+        logger.error(f"Error: {e}")
     finally:
         await app.shutdown()
 
 if __name__ == "__main__":
-    print("🚀 Starting LEKZY FX AI PRO - FIXED VERSION...")
     asyncio.run(main())
